@@ -1,4 +1,5 @@
 package go_rafting
+
 import (
 	"sort"
 )
@@ -27,10 +28,10 @@ type server struct {
 
 func NewServer(id string, peers []string) *server {
 	quorumSize := (len(peers) / 2) + 1
-	return &server{id : id, peers : peers, state : CANDIDATE, quorumSize : quorumSize}
+	return &server{id: id, peers: peers, state: CANDIDATE, quorumSize: quorumSize}
 }
 
-func (s *server)StartNewElection() {
+func (s *server) StartNewElection() {
 	if s.state == FOLLOWER || s.state == CANDIDATE {
 		s.term += 1
 		s.votedFor = s.id
@@ -60,23 +61,23 @@ func makeMap(keys []string, value int) (m map[string]int) {
 	return m
 }
 
-func (s *server)BecomeLeader() {
+func (s *server) BecomeLeader() {
 	if votes := countVotes(s.voteGranted); s.state == CANDIDATE && s.quorumSize <= votes {
 		s.state = LEADER
-		s.nextIndex = makeMap(s.peers, s.log.Length() + 1);
+		s.nextIndex = makeMap(s.peers, s.log.Length()+1)
 	}
 }
 
-func (s *server)AdvanceCommitIndex() {
-	matchIndexes := make([]int, len(s.peers) + 1)
+func (s *server) AdvanceCommitIndex() {
+	matchIndexes := make([]int, len(s.peers)+1)
 	matchIndexes = append(matchIndexes, s.log.Length())
 	for _, value := range s.matchIndex {
 		matchIndexes = append(matchIndexes, value)
 	}
 	sort.Ints(matchIndexes)
-	n := matchIndexes[s.quorumSize - 1];
-	if term, err := s.log.Term(n); err == nil && s.state == LEADER &&  term == s.term {
-		s.commitIndex = max(s.commitIndex, n);
+	n := matchIndexes[s.quorumSize-1]
+	if term, err := s.log.Term(n); err == nil && s.state == LEADER && term == s.term {
+		s.commitIndex = max(s.commitIndex, n)
 	}
 }
 
@@ -86,5 +87,3 @@ func max(a, b int) int {
 	}
 	return a
 }
-
-

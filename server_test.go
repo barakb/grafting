@@ -1,12 +1,13 @@
 package go_rafting
+
 import (
-	"testing"
 	"fmt"
+	"testing"
 )
 
-func TestCreateServer(t *testing.T){
+func TestCreateServer(t *testing.T) {
 	server := NewServer("server1", []string{"server2", "server3"})
 	fmt.Printf("server %v created\n", server)
-	server.StartNewElection();
+	server.StartNewElection()
 	fmt.Printf("server %v created\n", server)
 }

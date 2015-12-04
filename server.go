@@ -2,6 +2,7 @@ package go_rafting
 
 import (
 	"sort"
+	"time"
 )
 
 type State int
@@ -11,6 +12,8 @@ const (
 	CANDIDATE
 	LEADER
 )
+const RPC_TIMEOUT = 50000 * time.Millisecond
+const ELECTION_TIMEOUT = 100000 * time.Millisecond
 
 type Term uint64
 
@@ -28,17 +31,22 @@ type server struct {
 	quorumSize   int
 	outboundChan chan Message
 	inboundChan  chan Message
+	rpcDue       map[string]time.Time
+	heartbeatDue map[string]time.Time
 }
 
-func NewServer(id string, peers []string) *server {
+func NewServer(id string, peers []string, log Log) *server {
 	quorumSize := (len(peers) / 2) + 1
 	return &server{
 		id:           id,
 		peers:        peers,
+		log:          log,
 		state:        CANDIDATE,
 		quorumSize:   quorumSize,
 		outboundChan: make(chan Message),
-		inboundChan:  make(chan Message)}
+		inboundChan:  make(chan Message),
+		rpcDue:       make(map[string]time.Time),
+		heartbeatDue: make(map[string]time.Time)}
 }
 
 func (server *server) StartNewElection() {
@@ -52,6 +60,8 @@ func (server *server) StartNewElection() {
 		for _, key := range server.peers {
 			server.nextIndex[key] = 1
 		}
+		server.rpcDue = make(map[string]time.Time, len(server.peers))
+		server.heartbeatDue = make(map[string]time.Time, len(server.peers))
 	}
 }
 
@@ -59,6 +69,8 @@ func (server *server) BecomeLeader() {
 	if votes := countVotes(server.voteGranted); server.state == CANDIDATE && server.quorumSize <= votes {
 		server.state = LEADER
 		server.nextIndex = makeMap(server.peers, server.log.Length()+1)
+		server.rpcDue = make(map[string]time.Time, len(server.peers))
+		server.heartbeatDue = make(map[string]time.Time, len(server.peers))
 	}
 }
 
@@ -76,18 +88,33 @@ func (server *server) AdvanceCommitIndex() {
 }
 
 func (server *server) sendAppendEntries(peer string) {
-	if server.state == LEADER {
+	if server.state == LEADER &&
+		(time.Now().After(server.heartbeatDue[peer]) ||
+			(server.nextIndex[peer] <= server.log.Length() && time.Now().After(server.rpcDue[peer]))) {
+		server.rpcDue[peer] = time.Now().Add(RPC_TIMEOUT)
+		server.heartbeatDue[peer] = time.Now().Add(ELECTION_TIMEOUT / 2)
 		prevIndex := server.nextIndex[peer] - 1
 		lastIndex := min(prevIndex+1, server.log.Length())
 		if server.matchIndex[peer]+1 < server.nextIndex[peer] {
 			lastIndex = prevIndex
 		}
 		server.sendMessage(&AppendEntries{message: message{server.id, peer},
-			term:        server.term,
-			prevIndex:   prevIndex,
-			prevTerm:    server.log.Term(prevIndex),
-			entries:     server.log.Slice(prevIndex, lastIndex),
-			commitIndex: min(server.commitIndex, lastIndex)})
+			Term:        server.term,
+			PrevIndex:   prevIndex,
+			PrevTerm:    server.log.Term(prevIndex),
+			Entries:     server.log.Slice(prevIndex, lastIndex),
+			CommitIndex: min(server.commitIndex, lastIndex)})
+
+	}
+}
+
+func (server *server) sendRequestVote(peer string) {
+	if server.state == CANDIDATE && time.Now().After(server.rpcDue[peer]) {
+		server.rpcDue[peer] = time.Now().Add(RPC_TIMEOUT)
+		server.sendMessage(&RequestVote{message: message{server.id, peer},
+			Term:         server.term,
+			LastLogTerm:  server.log.Term(server.log.Length() - 1),
+			LastLogIndex: server.log.Length() - 1})
 	}
 }
 

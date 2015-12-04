@@ -20,9 +20,9 @@ func (message message) To() string {
 
 type RequestVote struct {
 	message
-	term         Term
-	lastLogTerm  Term
-	lastLogIndex int
+	Term         Term
+	LastLogTerm  Term
+	LastLogIndex int
 }
 
 type RequestVoteResponse struct {
@@ -33,16 +33,16 @@ type RequestVoteResponse struct {
 
 type AppendEntries struct {
 	message
-	term        Term
-	prevIndex   int
-	prevTerm    Term
-	entries     []interface{}
-	commitIndex int
+	Term        Term
+	PrevIndex   int
+	PrevTerm    Term
+	Entries     []LogEntry
+	CommitIndex int
 }
 
 type AppendEntriesResponse struct {
 	message
-	term       Term
-	success    bool
-	matchIndex int
+	Term       Term
+	Success    bool
+	MatchIndex int
 }

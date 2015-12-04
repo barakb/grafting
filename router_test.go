@@ -28,7 +28,7 @@ func newTestTarget(name string) *testTarget {
 func TestSelfRoute(t *testing.T) {
 	router := NewRouter()
 	testTarget := newTestTarget("target1")
-	router.Register(testTarget)
+	router.Register(testTarget, 1)
 	messageSent := &message{"from", "target1"}
 	testTarget.outboundChan <- messageSent
 	select {

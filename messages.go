@@ -27,8 +27,8 @@ type RequestVote struct {
 
 type RequestVoteResponse struct {
 	message
-	term    Term
-	granted bool
+	Term    Term
+	Granted bool
 }
 
 type AppendEntries struct {

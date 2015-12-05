@@ -1,6 +1,8 @@
 package go_rafting
 
 import (
+	"fmt"
+	"math/rand"
 	"sort"
 	"time"
 )
@@ -14,6 +16,8 @@ const (
 )
 const RPC_TIMEOUT = 50000 * time.Millisecond
 const ELECTION_TIMEOUT = 100000 * time.Millisecond
+
+var TIME_ZERO time.Time = time.Time{}
 
 type Term uint64
 
@@ -33,6 +37,7 @@ type server struct {
 	inboundChan  chan Message
 	rpcDue       map[string]time.Time
 	heartbeatDue map[string]time.Time
+	//	nextElectionTimeoutPeriod
 }
 
 func NewServer(id string, peers []string, log Log) *server {
@@ -51,6 +56,7 @@ func NewServer(id string, peers []string, log Log) *server {
 
 func (server *server) StartNewElection() {
 	if server.state == FOLLOWER || server.state == CANDIDATE {
+		//		server.electionTimeout = time.After(nextElectionTimeoutDuration())
 		server.term += 1
 		server.votedFor = server.id
 		server.state = CANDIDATE
@@ -71,6 +77,7 @@ func (server *server) BecomeLeader() {
 		server.nextIndex = makeMap(server.peers, server.log.Length()+1)
 		server.rpcDue = make(map[string]time.Time, len(server.peers))
 		server.heartbeatDue = make(map[string]time.Time, len(server.peers))
+		//		server.electionTimeout = nil
 	}
 }
 
@@ -103,7 +110,8 @@ func (server *server) sendAppendEntries(peer string) {
 			PrevIndex:   prevIndex,
 			PrevTerm:    server.log.Term(prevIndex),
 			Entries:     server.log.Slice(prevIndex, lastIndex),
-			CommitIndex: min(server.commitIndex, lastIndex)})
+			CommitIndex: min(server.commitIndex, lastIndex),
+		})
 
 	}
 }
@@ -114,8 +122,113 @@ func (server *server) sendRequestVote(peer string) {
 		server.sendMessage(&RequestVote{message: message{server.id, peer},
 			Term:         server.term,
 			LastLogTerm:  server.log.Term(server.log.Length() - 1),
-			LastLogIndex: server.log.Length() - 1})
+			LastLogIndex: server.log.Length() - 1,
+		})
 	}
+}
+
+func (server *server) handleRequestVote(request *RequestVote) {
+	if server.term < request.Term {
+		server.stepDown(request.Term)
+	}
+	granted := false
+	if server.term == request.Term && (server.votedFor == "" || server.votedFor == request.From()) &&
+		(server.log.Term(server.log.Length()) < request.LastLogTerm ||
+			(server.log.Term(server.log.Length()) == request.LastLogTerm &&
+				server.log.Length() <= request.LastLogIndex)) {
+		granted = true
+		server.votedFor = request.From()
+		server.newElectionTimeout()
+	}
+	server.sendMessage(&RequestVoteResponse{message: message{server.id, request.From()},
+		Term:    server.term,
+		Granted: granted,
+	})
+}
+
+func (server *server) handleRequestVoteResponse(response *RequestVoteResponse) {
+	if server.term < response.Term {
+		server.stepDown(response.Term)
+	}
+	if server.state == CANDIDATE && server.term == response.Term {
+		server.rpcDue[response.From()] = TIME_ZERO
+		server.voteGranted[response.From()] = response.Granted
+	}
+}
+
+func (server *server) handleAppendEntries(request *AppendEntries) {
+	success := false
+	matchIndex := 0
+	if server.term < request.Term {
+		server.stepDown(request.Term)
+	}
+	if server.term == request.Term {
+		server.state = FOLLOWER
+		if request.PrevIndex == 0 || (request.PrevIndex <= server.log.Length() && server.log.Term(request.PrevIndex) == request.PrevTerm) {
+			success = true
+			index := request.PrevIndex
+			for _, entry := range request.Entries {
+				index += 1
+				if server.log.Term(index) != entry.Term {
+					for index-1 < server.log.Length() {
+						server.log.RemoveLast()
+						server.log.Append(entry)
+					}
+				}
+			}
+			matchIndex = index
+			server.commitIndex = max(server.commitIndex, request.CommitIndex)
+		}
+	}
+	server.sendMessage(&AppendEntriesResponse{message: message{server.id, request.From()},
+		Term:       server.term,
+		Success:    success,
+		MatchIndex: matchIndex,
+	})
+}
+
+func (server *server) handleAppendEntriesResponse(response *AppendEntriesResponse) {
+	if server.term < response.Term {
+		server.stepDown(response.Term)
+	}
+	if server.state == LEADER && server.term == response.Term {
+		if response.Success {
+			server.matchIndex[response.From()] = max(server.matchIndex[response.From()], response.MatchIndex)
+			server.nextIndex[response.From()] = response.MatchIndex + 1
+		} else {
+			server.nextIndex[response.From()] = max(1, server.nextIndex[response.From()]-1)
+		}
+		server.rpcDue[response.From()] = TIME_ZERO
+	}
+}
+
+func (server *server) handleMessage(message Message) {
+	switch m := message.(type) {
+	case RequestVote:
+		server.handleRequestVote(&m)
+	case RequestVoteResponse:
+		server.handleRequestVoteResponse(&m)
+	case AppendEntries:
+		server.handleAppendEntries(&m)
+	case AppendEntriesResponse:
+		server.handleAppendEntriesResponse(&m)
+	default:
+		fmt.Printf("Ignoring unexpected message type %v\n", message)
+	}
+}
+
+func (server *server) stepDown(term Term) {
+	server.term = term
+	server.state = FOLLOWER
+	server.votedFor = ""
+	server.newElectionTimeout()
+}
+
+func (server *server) newElectionTimeout() {
+	//	if server.electionTimeout != nil {
+	//		close(server.electionTimeout)
+	//	}
+	//	server.electionTimeout = time.After(nextElectionTimeoutDuration())
 }
 
 func (server *server) sendMessage(message Message) {
@@ -156,4 +269,8 @@ func makeMap(keys []string, value int) (m map[string]int) {
 		m[key] = value
 	}
 	return m
+}
+
+func nextElectionTimeoutDuration() time.Duration {
+	return time.Duration(int(ELECTION_TIMEOUT) + rand.Intn(int(ELECTION_TIMEOUT)))
 }

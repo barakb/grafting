@@ -29,12 +29,12 @@ func TestSelfRoute(t *testing.T) {
 	router := NewRouter()
 	testTarget := newTestTarget("target1")
 	router.Register(testTarget, 1)
-	messageSent := &message{"from", "target1"}
+	messageSent := message{"from", "target1"}
 	testTarget.outboundChan <- messageSent
 	select {
 	case messageReceived := <-testTarget.inboundChan:
 		if messageSent != messageReceived {
-			t.Logf("Expected same message, instead, sent %p received %p\n", messageSent, messageReceived)
+			t.Logf("Expected same message, instead, sent %v received %v\n", messageSent, messageReceived)
 		}
 	case <-time.After(time.Second * 1):
 		t.Logf("Message from outbound was not put on inbound")

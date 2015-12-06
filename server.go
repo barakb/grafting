@@ -79,7 +79,7 @@ func (server *server) Stop() {
 
 func (server *server) candidateLoop() {
 	// setup
-	nextRequestVoteTimer := server.startNewElection()
+	server.startNewElection()
 	electionTimeout := time.After(nextElectionTimeoutDuration())
 	for server.state == CANDIDATE {
 		select {
@@ -88,16 +88,8 @@ func (server *server) candidateLoop() {
 		case message := <-server.inboundChan:
 			server.handleMessage(message)
 			server.becomeLeader()
-		case <-nextRequestVoteTimer:
-			// see what needed to do, compute next timeout.
-			nextRequestVoteTime := server.requestVote()
-			if !nextRequestVoteTime.IsZero() {
-				nextRequestVoteTimer = time.After(nextRequestVoteTime.Sub(time.Now()))
-			} else {
-				nextRequestVoteTimer = nil
-			}
 		case <-electionTimeout:
-			nextRequestVoteTimer = server.startNewElection()
+			server.startNewElection()
 			electionTimeout = time.After(nextElectionTimeoutDuration())
 		}
 	}
@@ -110,7 +102,7 @@ func (server *server) leaderLoop() {
 
 }
 
-func (server *server) startNewElection() <-chan time.Time {
+func (server *server) startNewElection() {
 	if server.state == FOLLOWER || server.state == CANDIDATE {
 		//		server.electionTimeout = time.After(nextElectionTimeoutDuration())
 		server.term += 1
@@ -124,26 +116,15 @@ func (server *server) startNewElection() <-chan time.Time {
 		}
 		server.rpcDue = make(map[string]time.Time, len(server.peers))
 		server.heartbeatDue = make(map[string]time.Time, len(server.peers))
-		nextRequestVoteTime := server.requestVote()
-		if !nextRequestVoteTime.IsZero() {
-			return time.After(nextRequestVoteTime.Sub(time.Now()))
-		} else {
-			return nil
-		}
-
+		server.requestVote()
 	}
-	return nil
 }
-func (server *server) requestVote() time.Time {
-	// send requestVote to each peer record the nearest timeout
-	var nearestTimeoutTime time.Time
+
+func (server *server) requestVote() {
+	// send requestVote to each peer
 	for _, peer := range server.peers {
-		timeout := server.sendRequestVote(peer)
-		if nearestTimeoutTime.IsZero() || timeout.Before(nearestTimeoutTime) {
-			nearestTimeoutTime = timeout
-		}
+		server.sendRequestVote(peer)
 	}
-	return nearestTimeoutTime
 }
 
 func (server *server) becomeLeader() {
@@ -192,8 +173,7 @@ func (server *server) sendAppendEntries(peer string) {
 }
 
 func (server *server) sendRequestVote(peer string) time.Time {
-	if server.state == CANDIDATE && time.Now().After(server.rpcDue[peer]) {
-		server.rpcDue[peer] = time.Now().Add(RPC_TIMEOUT)
+	if server.state == CANDIDATE {
 		server.sendMessage(&RequestVote{message: message{server.id, peer},
 			Term:         server.term,
 			LastLogTerm:  server.log.Term(server.log.Length() - 1),

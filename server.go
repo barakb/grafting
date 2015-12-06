@@ -14,6 +14,7 @@ const (
 	CANDIDATE
 	LEADER
 )
+
 const RPC_TIMEOUT = 50000 * time.Millisecond
 const ELECTION_TIMEOUT = 100000 * time.Millisecond
 
@@ -78,7 +79,6 @@ func (server *server) Stop() {
 }
 
 func (server *server) candidateLoop() {
-	// setup
 	server.startNewElection()
 	electionTimeout := time.After(nextElectionTimeoutDuration())
 	for server.state == CANDIDATE {
@@ -96,8 +96,22 @@ func (server *server) candidateLoop() {
 }
 
 func (server *server) followerLoop() {
-
+	electionTimeout := time.After(ELECTION_TIMEOUT)
+	for server.state == FOLLOWER {
+		select {
+		case <-server.done:
+			return
+		case message := <-server.inboundChan:
+			resetTimeout := server.handleMessage(message)
+			if resetTimeout {
+				electionTimeout = time.After(ELECTION_TIMEOUT)
+			}
+		case <-electionTimeout:
+			server.state = CANDIDATE
+		}
+	}
 }
+
 func (server *server) leaderLoop() {
 
 }
@@ -183,11 +197,11 @@ func (server *server) sendRequestVote(peer string) time.Time {
 	return server.rpcDue[peer]
 }
 
-func (server *server) handleRequestVote(request *RequestVote) {
+func (server *server) handleRequestVote(request *RequestVote) (granted bool) {
 	if server.term < request.Term {
 		server.stepDown(request.Term)
 	}
-	granted := false
+	granted = false
 	if server.term == request.Term && (server.votedFor == "" || server.votedFor == request.From()) &&
 		(server.log.Term(server.log.Length()) < request.LastLogTerm ||
 			(server.log.Term(server.log.Length()) == request.LastLogTerm &&
@@ -200,6 +214,7 @@ func (server *server) handleRequestVote(request *RequestVote) {
 		Term:    server.term,
 		Granted: granted,
 	})
+	return granted
 }
 
 func (server *server) handleRequestVoteResponse(response *RequestVoteResponse) {
@@ -258,18 +273,22 @@ func (server *server) handleAppendEntriesResponse(response *AppendEntriesRespons
 	}
 }
 
-func (server *server) handleMessage(message Message) {
+func (server *server) handleMessage(message Message) (restartElectionTimeout bool) {
 	switch m := message.(type) {
 	case RequestVote:
-		server.handleRequestVote(&m)
+		return server.handleRequestVote(&m)
 	case RequestVoteResponse:
 		server.handleRequestVoteResponse(&m)
+		return false
 	case AppendEntries:
 		server.handleAppendEntries(&m)
+		return true
 	case AppendEntriesResponse:
 		server.handleAppendEntriesResponse(&m)
+		return false
 	default:
 		fmt.Printf("Ignoring unexpected message type %v\n", message)
+		return false
 	}
 }
 
@@ -328,5 +347,5 @@ func makeMap(keys []string, value int) (m map[string]int) {
 }
 
 func nextElectionTimeoutDuration() time.Duration {
-	return time.Duration(int(ELECTION_TIMEOUT) + rand.Intn(int(ELECTION_TIMEOUT)))
+	return time.Duration(int(ELECTION_TIMEOUT)/2 + rand.Intn(int(ELECTION_TIMEOUT)/2))
 }

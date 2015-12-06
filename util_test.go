@@ -2,6 +2,7 @@ package go_rafting
 
 import (
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -18,7 +19,7 @@ func TestMaxTime(t *testing.T) {
 	const maxDuration time.Duration = 1<<63 - 1
 	then = then.Add(maxDuration)
 	fmt.Printf("then %v\n", then)
-
+	fmt.Printf("typeName %v\n", reflect.TypeOf(RequestVoteResponse{}).Name())
 	//	server := NewServer("server1", []string{"server2", "server3"})
 	//	fmt.Printf("server %v created\n", server)
 	//	server.StartNewElection()

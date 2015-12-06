@@ -113,7 +113,37 @@ func (server *server) followerLoop() {
 }
 
 func (server *server) leaderLoop() {
+	timer := server.sendAllAppendEntries()
+	for server.state == LEADER {
+		select {
+		case <-server.done:
+			return
+		case message := <-server.inboundChan:
+			server.handleMessage(message)
+		case <-timer:
+			timer = server.sendAllAppendEntries()
+		}
+	}
+}
 
+func (server *server) sendAllAppendEntries() <-chan time.Time {
+	for _, peer := range server.peers {
+		server.sendAppendEntries(peer)
+	}
+	return server.leaderTimer()
+}
+
+func (server *server) leaderTimer() <-chan time.Time {
+	var res time.Time
+	for _, key := range server.peers {
+		if res.IsZero() || res.After(server.rpcDue[key]) {
+			res = server.rpcDue[key]
+		}
+		if res.IsZero() || res.After(server.heartbeatDue[key]) {
+			res = server.heartbeatDue[key]
+		}
+	}
+	return time.After(durationUntil(res))
 }
 
 func (server *server) startNewElection() {
@@ -208,7 +238,6 @@ func (server *server) handleRequestVote(request *RequestVote) (granted bool) {
 				server.log.Length() <= request.LastLogIndex)) {
 		granted = true
 		server.votedFor = request.From()
-		server.newElectionTimeout()
 	}
 	server.sendMessage(&RequestVoteResponse{message: message{server.id, request.From()},
 		Term:    server.term,
@@ -296,14 +325,6 @@ func (server *server) stepDown(term Term) {
 	server.term = term
 	server.state = FOLLOWER
 	server.votedFor = ""
-	server.newElectionTimeout()
-}
-
-func (server *server) newElectionTimeout() {
-	//	if server.electionTimeout != nil {
-	//		close(server.electionTimeout)
-	//	}
-	//		server.electionTimeout = time.After(nextElectionTimeoutDuration())
 }
 
 func (server *server) sendMessage(message Message) {

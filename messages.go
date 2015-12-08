@@ -46,3 +46,8 @@ type AppendEntriesResponse struct {
 	Success    bool
 	MatchIndex int
 }
+
+type StateChangeEvent struct {
+	From State
+	To   State
+}

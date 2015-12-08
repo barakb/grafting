@@ -1,22 +1,26 @@
 package go_rafting
 
 import (
-	"fmt"
+	log "github.com/Sirupsen/logrus"
 	"math/rand"
 	"sort"
 	"time"
 )
 
+func init() {
+	log.SetLevel(log.DebugLevel)
+}
+
 type State int
 
 const (
-	FOLLOWER State = 1 + iota
-	CANDIDATE
-	LEADER
+	FOLLOWER  State = 1
+	CANDIDATE State = 2
+	LEADER    State = 3
 )
 
-const RPC_TIMEOUT = 50000 * time.Millisecond
-const ELECTION_TIMEOUT = 100000 * time.Millisecond
+const RPC_TIMEOUT = 100 * time.Millisecond
+const ELECTION_TIMEOUT = 150 * time.Millisecond
 
 var TIME_ZERO time.Time = time.Time{}
 
@@ -38,8 +42,8 @@ type server struct {
 	inboundChan  chan Message
 	rpcDue       map[string]time.Time
 	heartbeatDue map[string]time.Time
-	//	nextElectionTimeoutPeriod
-	done chan interface{}
+	eventsChan   chan StateChangeEvent
+	done         chan interface{}
 }
 
 func NewServer(id string, peers []string, log Log) *server {
@@ -53,7 +57,9 @@ func NewServer(id string, peers []string, log Log) *server {
 		outboundChan: make(chan Message),
 		inboundChan:  make(chan Message),
 		rpcDue:       make(map[string]time.Time),
-		heartbeatDue: make(map[string]time.Time)}
+		heartbeatDue: make(map[string]time.Time),
+		done:         make(chan interface{}),
+	}
 }
 
 func (server *server) Run() {
@@ -78,7 +84,29 @@ func (server *server) Stop() {
 	close(server.done)
 }
 
+func (server *server) setState(state State) {
+	if server.state != state {
+		old := server.state
+		server.state = state
+		server.sendEvent(StateChangeEvent{old, state})
+	}
+}
+
+func (server *server) sendEvent(event StateChangeEvent) {
+	if server.eventsChan != nil {
+		go func() {
+			select {
+			case <-time.After(10 * time.Millisecond):
+				return
+			case server.eventsChan <- event:
+				return
+			}
+		}()
+	}
+}
+
 func (server *server) candidateLoop() {
+	log.Infof("%s in candidate loop", server.id)
 	server.startNewElection()
 	electionTimeout := time.After(nextElectionTimeoutDuration())
 	for server.state == CANDIDATE {
@@ -93,9 +121,12 @@ func (server *server) candidateLoop() {
 			electionTimeout = time.After(nextElectionTimeoutDuration())
 		}
 	}
+	//	log.Infof("%s exiting candidate loop\n", server.id)
+	return
 }
 
 func (server *server) followerLoop() {
+	log.Infof("%s in follower loop", server.id)
 	electionTimeout := time.After(ELECTION_TIMEOUT)
 	for server.state == FOLLOWER {
 		select {
@@ -107,12 +138,13 @@ func (server *server) followerLoop() {
 				electionTimeout = time.After(ELECTION_TIMEOUT)
 			}
 		case <-electionTimeout:
-			server.state = CANDIDATE
+			server.setState(CANDIDATE)
 		}
 	}
 }
 
 func (server *server) leaderLoop() {
+	log.Infof("%s in leader loop", server.id)
 	timer := server.sendAllAppendEntries()
 	for server.state == LEADER {
 		select {
@@ -148,10 +180,10 @@ func (server *server) leaderTimer() <-chan time.Time {
 
 func (server *server) startNewElection() {
 	if server.state == FOLLOWER || server.state == CANDIDATE {
-		//		server.electionTimeout = time.After(nextElectionTimeoutDuration())
+		log.Infof("%s starting new election", server.id)
 		server.term += 1
 		server.votedFor = server.id
-		server.state = CANDIDATE
+		server.setState(CANDIDATE)
 		server.voteGranted = make(map[string]bool, len(server.peers))
 		server.matchIndex = make(map[string]int, len(server.peers))
 		server.nextIndex = make(map[string]int, len(server.peers))
@@ -173,11 +205,11 @@ func (server *server) requestVote() {
 
 func (server *server) becomeLeader() {
 	if votes := countVotes(server.voteGranted); server.state == CANDIDATE && server.quorumSize <= votes {
-		server.state = LEADER
+		server.setState(LEADER)
 		server.nextIndex = makeMap(server.peers, server.log.Length()+1)
 		server.rpcDue = make(map[string]time.Time, len(server.peers))
 		server.heartbeatDue = make(map[string]time.Time, len(server.peers))
-		//		server.electionTimeout = nil
+		log.Infof("%s is LEADER", server.id)
 	}
 }
 
@@ -220,8 +252,8 @@ func (server *server) sendRequestVote(peer string) time.Time {
 	if server.state == CANDIDATE {
 		server.sendMessage(&RequestVote{message: message{server.id, peer},
 			Term:         server.term,
-			LastLogTerm:  server.log.Term(server.log.Length() - 1),
-			LastLogIndex: server.log.Length() - 1,
+			LastLogTerm:  server.log.Term(server.log.Length()),
+			LastLogIndex: server.log.Length(),
 		})
 	}
 	return server.rpcDue[peer]
@@ -229,7 +261,7 @@ func (server *server) sendRequestVote(peer string) time.Time {
 
 func (server *server) handleRequestVote(request *RequestVote) (granted bool) {
 	if server.term < request.Term {
-		server.stepDown(request.Term)
+		server.stepDown(request.Term, request)
 	}
 	granted = false
 	if server.term == request.Term && (server.votedFor == "" || server.votedFor == request.From()) &&
@@ -248,7 +280,7 @@ func (server *server) handleRequestVote(request *RequestVote) (granted bool) {
 
 func (server *server) handleRequestVoteResponse(response *RequestVoteResponse) {
 	if server.term < response.Term {
-		server.stepDown(response.Term)
+		server.stepDown(response.Term, response)
 	}
 	if server.state == CANDIDATE && server.term == response.Term {
 		server.rpcDue[response.From()] = TIME_ZERO
@@ -260,10 +292,10 @@ func (server *server) handleAppendEntries(request *AppendEntries) {
 	success := false
 	matchIndex := 0
 	if server.term < request.Term {
-		server.stepDown(request.Term)
+		server.stepDown(request.Term, request)
 	}
 	if server.term == request.Term {
-		server.state = FOLLOWER
+		server.setState(FOLLOWER)
 		if request.PrevIndex == 0 || (request.PrevIndex <= server.log.Length() && server.log.Term(request.PrevIndex) == request.PrevTerm) {
 			success = true
 			index := request.PrevIndex
@@ -289,7 +321,7 @@ func (server *server) handleAppendEntries(request *AppendEntries) {
 
 func (server *server) handleAppendEntriesResponse(response *AppendEntriesResponse) {
 	if server.term < response.Term {
-		server.stepDown(response.Term)
+		server.stepDown(response.Term, response)
 	}
 	if server.state == LEADER && server.term == response.Term {
 		if response.Success {
@@ -303,6 +335,7 @@ func (server *server) handleAppendEntriesResponse(response *AppendEntriesRespons
 }
 
 func (server *server) handleMessage(message Message) (restartElectionTimeout bool) {
+	log.Infof("%s <- %#v", server.id, message)
 	switch m := message.(type) {
 	case RequestVote:
 		return server.handleRequestVote(&m)
@@ -316,18 +349,22 @@ func (server *server) handleMessage(message Message) (restartElectionTimeout boo
 		server.handleAppendEntriesResponse(&m)
 		return false
 	default:
-		fmt.Printf("Ignoring unexpected message type %v\n", message)
+		log.Warnf("%s ignoring unexpected message type %v\n", server.id, message)
 		return false
 	}
 }
 
-func (server *server) stepDown(term Term) {
+func (server *server) stepDown(term Term, message Message) {
+	if server.state != FOLLOWER {
+		log.Infof("%s step down from %v -> %v at term %d, because of message %#v", server.id, server.state, FOLLOWER, term, message)
+	}
 	server.term = term
-	server.state = FOLLOWER
+	server.setState(FOLLOWER)
 	server.votedFor = ""
 }
 
 func (server *server) sendMessage(message Message) {
+	log.Infof("%s -> %#v", server.id, message)
 	server.outboundChan <- message
 }
 
@@ -361,6 +398,7 @@ func countVotes(m map[string]bool) (res int) {
  */
 
 func makeMap(keys []string, value int) (m map[string]int) {
+	m = make(map[string]int)
 	for _, key := range keys {
 		m[key] = value
 	}
@@ -368,5 +406,5 @@ func makeMap(keys []string, value int) (m map[string]int) {
 }
 
 func nextElectionTimeoutDuration() time.Duration {
-	return time.Duration(int(ELECTION_TIMEOUT)/2 + rand.Intn(int(ELECTION_TIMEOUT)/2))
+	return time.Duration(int(ELECTION_TIMEOUT) + rand.Intn(int(ELECTION_TIMEOUT)/2))
 }

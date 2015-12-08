@@ -285,6 +285,13 @@ out:
 	close(done)
 }
 
+
+//todo
+// log replication.
+// log sync.
+// commit log.
+
+
 func waitForState(server *server, state State) bool {
 	for i := 0; i < 10; i++ {
 		if server.state == state {

@@ -218,11 +218,11 @@ out:
 		switch i {
 		case 0:
 			if event.From != CANDIDATE && event.To != LEADER {
-				t.Errorf("Should change state from CANDIDATE to LEADER instead", event)
+				t.Error("Should change state from CANDIDATE to LEADER instead", event)
 			}
 		case 1:
 			if event.From != LEADER && event.To != FOLLOWER {
-				t.Errorf("Should change state from LEADER to FOLLOWER instead", event)
+				t.Error("Should change state from LEADER to FOLLOWER instead", event)
 			}
 			break out
 
@@ -270,11 +270,11 @@ out:
 		switch i {
 		case 0:
 			if event.From != CANDIDATE && event.To != LEADER {
-				t.Errorf("Should change state from CANDIDATE to LEADER instead", event)
+				t.Error("Should change state from CANDIDATE to LEADER instead", event)
 			}
 		case 1:
 			if event.From != LEADER && event.To != FOLLOWER {
-				t.Errorf("Should change state from LEADER to FOLLOWER instead", event)
+				t.Error("Should change state from LEADER to FOLLOWER instead", event)
 			}
 			break out
 
@@ -285,12 +285,79 @@ out:
 	close(done)
 }
 
+/*
+func TestLeaderReplicateLogs(t *testing.T) {
+	server := NewServer("server1", []string{"server2", "server3"}, NewMemoryLog())
+	server.log.Append(LogEntry{1, Term(1)})
+	server.log.Append(LogEntry{2, Term(2)})
+	server.log.Append(LogEntry{3, Term(3)})
+	fmt.Printf("server.log %#v\n", server.log)
+	server.term = Term(3)
+	server.eventsChan = make(chan StateChangeEvent, 100)
+	done := make(chan interface{})
+	seenFirstTerm := false
+	countDown := 0
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			case m := <-server.outboundChan:
+				switch msg := m.(type) {
+				case *RequestVote:
+					go func() {
+						server.inboundChan <- RequestVoteResponse{message: message{msg.To(), msg.From()},
+							Term:    msg.Term,
+							Granted: true,
+						}
+					}()
+				case *AppendEntries:
+					go func() {
+						if msg.PrevIndex == 0 {
+							seenFirstTerm = true
+						}
+						if !seenFirstTerm {
+							countDown += 1
+						}
+						server.inboundChan <- AppendEntriesResponse{message: message{msg.To(), msg.From()},
+							Term:    msg.Term,
+							Success: seenFirstTerm,
+						}
+					}()
+
+				default:
+				}
+			}
+		}
+	}()
+	go server.Run()
+	i := 0
+out:
+	for event := range server.eventsChan {
+		switch i {
+		case 0:
+			if event.From != CANDIDATE && event.To != LEADER {
+				t.Error("Should change state from CANDIDATE to LEADER instead", event)
+			}
+		case 1:
+			if event.From != LEADER && event.To != FOLLOWER {
+				t.Error("Should change state from LEADER to FOLLOWER instead", event)
+			}
+			break out
+
+		}
+		i += 1
+	}
+	server.Stop()
+	close(done)
+
+}
+*/
 
 //todo
 // log replication.
 // log sync.
 // commit log.
-
 
 func waitForState(server *server, state State) bool {
 	for i := 0; i < 10; i++ {

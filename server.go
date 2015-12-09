@@ -206,7 +206,10 @@ func (server *server) requestVote() {
 func (server *server) becomeLeader() {
 	if votes := countVotes(server.voteGranted); server.state == CANDIDATE && server.quorumSize <= votes {
 		server.setState(LEADER)
-		server.nextIndex = makeMap(server.peers, server.log.Length()+1)
+		server.nextIndex = makeMap(server.peers, server.log.Length())
+		for _, key := range server.peers {
+			server.nextIndex[key] = 1
+		}
 		server.rpcDue = make(map[string]time.Time, len(server.peers))
 		server.heartbeatDue = make(map[string]time.Time, len(server.peers))
 		log.Infof("%s is LEADER", server.id)
@@ -233,17 +236,21 @@ func (server *server) sendAppendEntries(peer string) {
 		server.rpcDue[peer] = time.Now().Add(RPC_TIMEOUT)
 		server.heartbeatDue[peer] = time.Now().Add(ELECTION_TIMEOUT / 2)
 		prevIndex := server.nextIndex[peer] - 1
-		lastIndex := min(prevIndex+1, server.log.Length())
+		lastIndex := min(prevIndex+1, server.log.Length()) // 3
 		if server.matchIndex[peer]+1 < server.nextIndex[peer] {
 			lastIndex = prevIndex
 		}
-		server.sendMessage(&AppendEntries{message: message{server.id, peer},
+		log.Infof("server.matchIndex[peer] = %d, server.nextIndex[peer] = %d, lastIndex = %d\n", server.matchIndex[peer], server.nextIndex[peer], lastIndex)
+		log.Infof("server.log.Slice(%d, %d) = %#v\n", prevIndex, lastIndex+1, server.log.Slice(prevIndex, lastIndex+1))
+		msg := &AppendEntries{message: message{server.id, peer},
 			Term:        server.term,
 			PrevIndex:   prevIndex,
 			PrevTerm:    server.log.Term(prevIndex),
-			Entries:     server.log.Slice(prevIndex, lastIndex),
+			Entries:     server.log.Slice(prevIndex, lastIndex+1),
 			CommitIndex: min(server.commitIndex, lastIndex),
-		})
+		}
+		log.Infof("------------ sendAppendEntries to %s\nmessage is:\n%#v\nlog is:\n%#v\n", peer, msg, server.log)
+		server.sendMessage(msg)
 
 	}
 }

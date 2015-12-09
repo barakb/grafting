@@ -12,29 +12,28 @@ func TestCreateMemoryLog(t *testing.T) {
 	}
 }
 
-func TestMemoryLogTerm(t *testing.T){
+func TestMemoryLogTerm(t *testing.T) {
 	log := NewMemoryLog()
 	log.Append(LogEntry{1, 2})
-	if term := log.Term(0); term != Term(0){
+	if term := log.Term(0); term != Term(0) {
 		t.Fatal("log index start at 1 so logTerm(0) should returns 0 instead", term)
 	}
 }
 
-func TestMemoryLogSlice(t *testing.T){
+func TestMemoryLogSlice(t *testing.T) {
 	log := NewMemoryLog()
 	log.Append(LogEntry{1, 1})
 	log.Append(LogEntry{2, 2})
 	log.Append(LogEntry{3, 3})
 	log.Append(LogEntry{4, 4})
 	s := log.Slice(1, 2)
-	if len(s) != 1{
+	if len(s) != 1 {
 		t.Fatal("slice should be of 1 len instead ", s)
 	}
-	if s[0].Command != 1{
+	if s[0].Command != 1 {
 		t.Fatal("slice term should be of 1 len instead ", s)
 	}
 }
-
 
 func TestMemoryLogAppend(t *testing.T) {
 	log := NewMemoryLog()

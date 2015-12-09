@@ -23,10 +23,16 @@ func (log MemoryLog) Length() int {
 }
 
 func (log MemoryLog) Term(index int) Term {
+	if index < 1 || log.size < index{
+		return Term(0)
+	}
+	index -= 1
 	return log.entries[index].Term
 }
 
 func (log MemoryLog) Slice(from int, to int) []LogEntry {
+	from = max(0, from -1)
+	to = min(to - 1, log.size)
 	return log.entries[from:min(to, log.size)]
 }
 

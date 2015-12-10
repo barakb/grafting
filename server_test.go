@@ -285,13 +285,11 @@ out:
 	close(done)
 }
 
-/*
 func TestLeaderReplicateLogs(t *testing.T) {
 	server := NewServer("server1", []string{"server2", "server3"}, NewMemoryLog())
 	server.log.Append(LogEntry{1, Term(1)})
 	server.log.Append(LogEntry{2, Term(2)})
 	server.log.Append(LogEntry{3, Term(3)})
-	fmt.Printf("server.log %#v\n", server.log)
 	server.term = Term(3)
 	server.eventsChan = make(chan StateChangeEvent, 100)
 	done := make(chan interface{})
@@ -312,6 +310,10 @@ func TestLeaderReplicateLogs(t *testing.T) {
 						}
 					}()
 				case *AppendEntries:
+					if seenFirstTerm && msg.PrevIndex == 3 {
+						server.Stop()
+						return
+					}
 					go func() {
 						if msg.PrevIndex == 0 {
 							seenFirstTerm = true
@@ -320,8 +322,9 @@ func TestLeaderReplicateLogs(t *testing.T) {
 							countDown += 1
 						}
 						server.inboundChan <- AppendEntriesResponse{message: message{msg.To(), msg.From()},
-							Term:    msg.Term,
-							Success: seenFirstTerm,
+							Term:       msg.Term,
+							MatchIndex: msg.PrevIndex + len(msg.Entries),
+							Success:    seenFirstTerm,
 						}
 					}()
 
@@ -330,32 +333,22 @@ func TestLeaderReplicateLogs(t *testing.T) {
 			}
 		}
 	}()
-	go server.Run()
-	i := 0
-out:
-	for event := range server.eventsChan {
-		switch i {
-		case 0:
-			if event.From != CANDIDATE && event.To != LEADER {
-				t.Error("Should change state from CANDIDATE to LEADER instead", event)
-			}
-		case 1:
-			if event.From != LEADER && event.To != FOLLOWER {
-				t.Error("Should change state from LEADER to FOLLOWER instead", event)
-			}
-			break out
-
-		}
-		i += 1
+	server.Run()
+	if server.state != LEADER {
+		t.Error("Should be LEADER instead", server.state)
 	}
-	server.Stop()
-	close(done)
-
+	if server.nextIndex["server2"] != 4 {
+		t.Error("server.nextIndex[\"server2\"] should be 4 instead", server.nextIndex["server2"])
+	}
+	if server.matchIndex["server2"] != 3 {
+		t.Error("server.matchIndex[\"server2\"] should be 3 instead", server.matchIndex["server2"])
+	}
 }
-*/
 
 //todo
 // log replication.
+// 1. leader send right AppendEntries
+// 2. Follower update logs and send right AppendEntriesResponse
 // log sync.
 // commit log.
 

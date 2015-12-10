@@ -208,7 +208,7 @@ func (server *server) becomeLeader() {
 		server.setState(LEADER)
 		server.nextIndex = makeMap(server.peers, server.log.Length())
 		for _, key := range server.peers {
-			server.nextIndex[key] = 1
+			server.nextIndex[key] = server.log.NextIndex()
 		}
 		server.rpcDue = make(map[string]time.Time, len(server.peers))
 		server.heartbeatDue = make(map[string]time.Time, len(server.peers))
@@ -237,19 +237,21 @@ func (server *server) sendAppendEntries(peer string) {
 		server.heartbeatDue[peer] = time.Now().Add(ELECTION_TIMEOUT / 2)
 		prevIndex := server.nextIndex[peer] - 1
 		lastIndex := min(prevIndex+1, server.log.Length()) // 3
+		//		log.Infof("sendAppendEntries\n-------------------------\n")
+		//		log.Infof("lastIndex := min(prevIndex + 1, server.log.Length()) -> %d := min(%d + 1, %d) \n", lastIndex, prevIndex, server.log.Length())
 		if server.matchIndex[peer]+1 < server.nextIndex[peer] {
 			lastIndex = prevIndex
 		}
-		log.Infof("server.matchIndex[peer] = %d, server.nextIndex[peer] = %d, lastIndex = %d\n", server.matchIndex[peer], server.nextIndex[peer], lastIndex)
-		log.Infof("server.log.Slice(%d, %d) = %#v\n", prevIndex, lastIndex+1, server.log.Slice(prevIndex, lastIndex+1))
+		//		log.Infof("server.matchIndex[peer] = %d, server.nextIndex[peer] = %d, lastIndex = %d\n", server.matchIndex[peer], server.nextIndex[peer], lastIndex)
+		//		log.Infof("server.log.Slice(%d, %d) = %#v\n", prevIndex, lastIndex, server.log.Slice(prevIndex, lastIndex))
 		msg := &AppendEntries{message: message{server.id, peer},
 			Term:        server.term,
 			PrevIndex:   prevIndex,
 			PrevTerm:    server.log.Term(prevIndex),
-			Entries:     server.log.Slice(prevIndex, lastIndex+1),
+			Entries:     server.log.Slice(prevIndex, lastIndex),
 			CommitIndex: min(server.commitIndex, lastIndex),
 		}
-		log.Infof("------------ sendAppendEntries to %s\nmessage is:\n%#v\nlog is:\n%#v\n", peer, msg, server.log)
+		//		log.Infof("------------ sendAppendEntries to %s\nmessage is:\n%#v\nlog is:\n%#v\n", peer, msg, server.log)
 		server.sendMessage(msg)
 
 	}
@@ -372,7 +374,13 @@ func (server *server) stepDown(term Term, message Message) {
 
 func (server *server) sendMessage(message Message) {
 	log.Infof("%s -> %#v", server.id, message)
-	server.outboundChan <- message
+	select {
+	case server.outboundChan <- message:
+		return
+	case <-server.done:
+		return
+	}
+
 }
 
 /*

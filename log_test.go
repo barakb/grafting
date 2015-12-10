@@ -26,7 +26,7 @@ func TestMemoryLogSlice(t *testing.T) {
 	log.Append(LogEntry{2, 2})
 	log.Append(LogEntry{3, 3})
 	log.Append(LogEntry{4, 4})
-	s := log.Slice(1, 2)
+	s := log.Slice(0, 1)
 	if len(s) != 1 {
 		t.Fatal("slice should be of 1 len instead ", s)
 	}

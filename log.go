@@ -6,6 +6,7 @@ type Log interface {
 	Slice(from int, to int) []LogEntry
 	RemoveLast() LogEntry
 	Append(entry LogEntry)
+	NextIndex() int
 }
 
 type LogEntry struct {
@@ -21,6 +22,9 @@ type MemoryLog struct {
 func (log MemoryLog) Length() int {
 	return log.size
 }
+func (log MemoryLog) NextIndex() int {
+	return log.size + 1
+}
 
 func (log MemoryLog) Term(index int) Term {
 	if index < 1 || log.size < index {
@@ -31,9 +35,10 @@ func (log MemoryLog) Term(index int) Term {
 }
 
 func (log MemoryLog) Slice(from int, to int) []LogEntry {
-	from = max(0, from-1)
-	to = min(to-1, log.size)
-	return log.entries[from:min(to, log.size)]
+	//	from = max(0, from-1)
+	//	to = min(to-1, log.size)
+	//	return log.entries[from:min(to, log.size)]
+	return log.entries[from:to]
 }
 
 func (log *MemoryLog) Append(entry LogEntry) {

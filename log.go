@@ -1,5 +1,7 @@
 package go_rafting
 
+import "fmt"
+
 type Log interface {
 	Length() int
 	Term(index int) Term
@@ -35,9 +37,6 @@ func (log MemoryLog) Term(index int) Term {
 }
 
 func (log MemoryLog) Slice(from int, to int) []LogEntry {
-	//	from = max(0, from-1)
-	//	to = min(to-1, log.size)
-	//	return log.entries[from:min(to, log.size)]
 	return log.entries[from:to]
 }
 
@@ -54,6 +53,10 @@ func (log *MemoryLog) RemoveLast() LogEntry {
 	res := log.entries[log.size-1]
 	log.size -= 1
 	return res
+}
+
+func (log MemoryLog) String() string {
+	return fmt.Sprintf("MemoryLog{size:%d, entries:%v}", log.size, log.entries[0:log.size])
 }
 
 func NewMemoryLog() Log {

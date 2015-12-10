@@ -96,6 +96,8 @@ func (server *server) sendEvent(event StateChangeEvent) {
 	if server.eventsChan != nil {
 		go func() {
 			select {
+			case <-server.done:
+				return
 			case <-time.After(10 * time.Millisecond):
 				return
 			case server.eventsChan <- event:
@@ -236,14 +238,10 @@ func (server *server) sendAppendEntries(peer string) {
 		server.rpcDue[peer] = time.Now().Add(RPC_TIMEOUT)
 		server.heartbeatDue[peer] = time.Now().Add(ELECTION_TIMEOUT / 2)
 		prevIndex := server.nextIndex[peer] - 1
-		lastIndex := min(prevIndex+1, server.log.Length()) // 3
-		//		log.Infof("sendAppendEntries\n-------------------------\n")
-		//		log.Infof("lastIndex := min(prevIndex + 1, server.log.Length()) -> %d := min(%d + 1, %d) \n", lastIndex, prevIndex, server.log.Length())
+		lastIndex := min(prevIndex+1, server.log.Length())
 		if server.matchIndex[peer]+1 < server.nextIndex[peer] {
 			lastIndex = prevIndex
 		}
-		//		log.Infof("server.matchIndex[peer] = %d, server.nextIndex[peer] = %d, lastIndex = %d\n", server.matchIndex[peer], server.nextIndex[peer], lastIndex)
-		//		log.Infof("server.log.Slice(%d, %d) = %#v\n", prevIndex, lastIndex, server.log.Slice(prevIndex, lastIndex))
 		msg := &AppendEntries{message: message{server.id, peer},
 			Term:        server.term,
 			PrevIndex:   prevIndex,
@@ -251,7 +249,6 @@ func (server *server) sendAppendEntries(peer string) {
 			Entries:     server.log.Slice(prevIndex, lastIndex),
 			CommitIndex: min(server.commitIndex, lastIndex),
 		}
-		//		log.Infof("------------ sendAppendEntries to %s\nmessage is:\n%#v\nlog is:\n%#v\n", peer, msg, server.log)
 		server.sendMessage(msg)
 
 	}
@@ -313,8 +310,8 @@ func (server *server) handleAppendEntries(request *AppendEntries) {
 				if server.log.Term(index) != entry.Term {
 					for index-1 < server.log.Length() {
 						server.log.RemoveLast()
-						server.log.Append(entry)
 					}
+					server.log.Append(entry)
 				}
 			}
 			matchIndex = index
@@ -375,9 +372,9 @@ func (server *server) stepDown(term Term, message Message) {
 func (server *server) sendMessage(message Message) {
 	log.Infof("%s -> %#v", server.id, message)
 	select {
-	case server.outboundChan <- message:
-		return
 	case <-server.done:
+		return
+	case server.outboundChan <- message:
 		return
 	}
 

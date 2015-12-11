@@ -408,12 +408,75 @@ func TestFollowerReplicateLogs(t *testing.T) {
 	}
 }
 
+func TestFollowerReplicateTruncateLogs(t *testing.T) {
+	server := NewServer("server1", []string{"server2", "server3"}, NewMemoryLog())
+	server.log.Append(LogEntry{1, 1})
+	server.log.Append(LogEntry{2, 1})
+	go func() {
+		term := Term(1000)
+		server.inboundChan <- AppendEntries{message: message{"server1", "server2"},
+			Term:        term,
+			PrevIndex:   1,
+			PrevTerm:    term,
+			Entries:     []LogEntry{},
+			CommitIndex: 0,
+		}
+		server.inboundChan <- AppendEntries{message: message{"server1", "server2"},
+			Term:        term,
+			PrevIndex:   0,
+			PrevTerm:    term,
+			Entries:     []LogEntry{{3, Term(3)}},
+			CommitIndex: 0,
+		}
+	}()
+	aa := make([]*AppendEntriesResponse, 0)
+	go func() {
+		for {
+			select {
+			case <-server.done:
+				return
+			case m := <-server.outboundChan:
+				switch msg := m.(type) {
+				case *AppendEntriesResponse:
+					aa = append(aa, msg)
+				case *RequestVote:
+					if msg.Term == Term(1001) {
+						server.Stop()
+					}
+				default:
+				}
+			}
+		}
+	}()
+	server.Run()
+	first := aa[0]
+	if first.Success != false {
+		t.Error("First response should not success", first)
+	}
+	second := aa[1]
+	if second.Success != true {
+		t.Error("Second response should success", second)
+	}
+	if second.MatchIndex != 1 {
+		t.Error("Second MatchIndex should be 1", second)
+	}
+	// check the log.
+	if server.log.Length() != 1 {
+		t.Error("Server log len should be 1", server.log)
+	}
+	le := server.log.Slice(0, 1)[0]
+	if le.Term != Term(3) {
+		t.Error("Server log first term should be 1", server.log)
+	}
+	if le.Command != 3 {
+		t.Error("Server log first command should be 1", server.log)
+	}
+}
+
 //todo
-// log replication.
-// 1. leader send right AppendEntries - done.
-// 2. Follower update logs and send right AppendEntriesResponse, todo add one that log should be shortened.
-// log sync.
 // commit log.
+// 1. leader decide when to commit index.
+// 2. follower update commit index
 
 func waitForState(server *server, state State) bool {
 	for i := 0; i < 10; i++ {

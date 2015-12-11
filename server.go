@@ -129,7 +129,7 @@ func (server *server) candidateLoop() {
 
 func (server *server) followerLoop() {
 	log.Infof("%s in follower loop", server.id)
-	electionTimeout := time.After(ELECTION_TIMEOUT)
+	electionTimeout := time.After(nextElectionTimeoutDuration())
 	for server.state == FOLLOWER {
 		select {
 		case <-server.done:
@@ -137,7 +137,7 @@ func (server *server) followerLoop() {
 		case message := <-server.inboundChan:
 			resetTimeout := server.handleMessage(message)
 			if resetTimeout {
-				electionTimeout = time.After(ELECTION_TIMEOUT)
+				electionTimeout = time.After(nextElectionTimeoutDuration())
 			}
 		case <-electionTimeout:
 			server.setState(CANDIDATE)

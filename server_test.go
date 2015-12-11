@@ -289,7 +289,7 @@ func TestLeaderReplicateLogs(t *testing.T) {
 	server := NewServer("server1", []string{"server2", "server3"}, NewMemoryLog())
 	server.log.Append(LogEntry{1, Term(1)})
 	server.log.Append(LogEntry{2, Term(2)})
-	server.log.Append(LogEntry{3, Term(3)})
+	server.log.Append(LogEntry{3, Term(4)})
 	server.term = Term(3)
 	server.eventsChan = make(chan StateChangeEvent, 100)
 	done := make(chan interface{})
@@ -333,7 +333,13 @@ func TestLeaderReplicateLogs(t *testing.T) {
 			}
 		}
 	}()
+	if server.commitIndex != 0 {
+		t.Error("Commit index should be zero, instead", server.commitIndex)
+	}
 	server.Run()
+	if server.term != 4 {
+		t.Error("server term should be 4, instead", server.term)
+	}
 	if server.state != LEADER {
 		t.Error("Should be LEADER instead", server.state)
 	}
@@ -343,6 +349,11 @@ func TestLeaderReplicateLogs(t *testing.T) {
 	if server.matchIndex["server2"] != 3 {
 		t.Error("server.matchIndex[\"server2\"] should be 3 instead", server.matchIndex["server2"])
 	}
+
+	if server.commitIndex != 3 {
+		t.Error("Commit index should be 3, instead", server.commitIndex)
+	}
+
 }
 
 func TestFollowerReplicateLogs(t *testing.T) {
@@ -426,7 +437,7 @@ func TestFollowerReplicateTruncateLogs(t *testing.T) {
 			PrevIndex:   0,
 			PrevTerm:    term,
 			Entries:     []LogEntry{{3, Term(3)}},
-			CommitIndex: 0,
+			CommitIndex: 1,
 		}
 	}()
 	aa := make([]*AppendEntriesResponse, 0)
@@ -448,35 +459,36 @@ func TestFollowerReplicateTruncateLogs(t *testing.T) {
 			}
 		}
 	}()
+	if server.commitIndex != 0 {
+		t.Error("Server commitIndex should be 0, instead", server.commitIndex)
+	}
 	server.Run()
 	first := aa[0]
 	if first.Success != false {
-		t.Error("First response should not success", first)
+		t.Error("First response should not success, instead", first)
 	}
 	second := aa[1]
 	if second.Success != true {
-		t.Error("Second response should success", second)
+		t.Error("Second response should success, instead", second)
 	}
 	if second.MatchIndex != 1 {
-		t.Error("Second MatchIndex should be 1", second)
+		t.Error("Second MatchIndex should be 1, instead", second)
 	}
 	// check the log.
 	if server.log.Length() != 1 {
-		t.Error("Server log len should be 1", server.log)
+		t.Error("Server log len should be 1, instead", server.log)
 	}
 	le := server.log.Slice(0, 1)[0]
 	if le.Term != Term(3) {
-		t.Error("Server log first term should be 1", server.log)
+		t.Error("Server log first term should be 1, instead", server.log)
 	}
 	if le.Command != 3 {
-		t.Error("Server log first command should be 1", server.log)
+		t.Error("Server log first command should be 1, instead", server.log)
+	}
+	if server.commitIndex != 1 {
+		t.Error("Server commitIndex should be 1, instead", server.commitIndex)
 	}
 }
-
-//todo
-// commit log.
-// 1. leader decide when to commit index.
-// 2. follower update commit index
 
 func waitForState(server *server, state State) bool {
 	for i := 0; i < 10; i++ {

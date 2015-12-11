@@ -218,19 +218,6 @@ func (server *server) becomeLeader() {
 	}
 }
 
-func (server *server) AdvanceCommitIndex() {
-	matchIndexes := make([]int, len(server.peers)+1)
-	matchIndexes = append(matchIndexes, server.log.Length())
-	for _, value := range server.matchIndex {
-		matchIndexes = append(matchIndexes, value)
-	}
-	sort.Ints(matchIndexes)
-	n := matchIndexes[server.quorumSize-1]
-	if server.state == LEADER && server.log.Term(n) == server.term {
-		server.commitIndex = max(server.commitIndex, n)
-	}
-}
-
 func (server *server) sendAppendEntries(peer string) {
 	if server.state == LEADER &&
 		(time.Now().After(server.heartbeatDue[peer]) ||
@@ -333,10 +320,24 @@ func (server *server) handleAppendEntriesResponse(response *AppendEntriesRespons
 		if response.Success {
 			server.matchIndex[response.From()] = max(server.matchIndex[response.From()], response.MatchIndex)
 			server.nextIndex[response.From()] = response.MatchIndex + 1
+			server.advanceCommitIndex()
 		} else {
 			server.nextIndex[response.From()] = max(1, server.nextIndex[response.From()]-1)
 		}
 		server.rpcDue[response.From()] = TIME_ZERO
+	}
+}
+
+func (server *server) advanceCommitIndex() {
+	matchIndexes := make([]int, 0)
+	matchIndexes = append(matchIndexes, server.log.Length())
+	for _, value := range server.matchIndex {
+		matchIndexes = append(matchIndexes, value)
+	}
+	sort.Ints(matchIndexes)
+	n := matchIndexes[server.quorumSize-1]
+	if server.state == LEADER && server.log.Term(n) == server.term {
+		server.commitIndex = max(server.commitIndex, n)
 	}
 }
 

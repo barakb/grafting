@@ -32,8 +32,9 @@ func (router Router) Register(target RouteTarget, inboundChanSize int) {
 	}
 }
 
-func (router Router) ShutDown() {
+func (router Router) Close() error {
 	close(router.done)
+	return nil
 }
 
 func NewRouter() Router {
@@ -44,26 +45,26 @@ func (router Router) serveOutbound(target RouteTarget) {
 	for {
 		select {
 		case <-router.done:
-			return;
+			return
 		case message := <-target.OutboundChan():
 			router.dispatch(message)
 			return
 		}
 	}
 }
-func (router Router) connect(target string, sourceChan <-chan Message, targetChan chan <- Message) {
+func (router Router) connect(target string, sourceChan <-chan Message, targetChan chan<- Message) {
 	for {
 		select {
 		case message := <-sourceChan:
-		// put it target output channel with 1 second timeout.
-				select {
-				case targetChan <- message:
-					continue
-				case <-time.After(time.Second * 1):
-					fmt.Printf("failed to send message %v to target %s", message, target)
-				case <-router.done:
-					return
-				}
+			// put it target output channel with 1 second timeout.
+			select {
+			case targetChan <- message:
+				continue
+			case <-time.After(time.Second * 1):
+				fmt.Printf("failed to send message %v to target %s", message, target)
+			case <-router.done:
+				return
+			}
 		case <-router.done:
 			return
 		}
@@ -74,7 +75,7 @@ func (router Router) dispatch(message Message) {
 	if inboundChan, ok := router.inboundQueue[message.To()]; ok {
 		select {
 		case <-router.done:
-			return;
+			return
 		case inboundChan <- message:
 			return
 		}

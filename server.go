@@ -80,8 +80,9 @@ func (server *server) Run() {
 	}
 }
 
-func (server *server) Stop() {
+func (server *server) Close() error {
 	close(server.done)
+	return nil
 }
 
 func (server *server) setState(state State) {

@@ -39,5 +39,5 @@ func TestSelfRoute(t *testing.T) {
 	case <-time.After(time.Second * 1):
 		t.Logf("Message from outbound was not put on inbound")
 	}
-	router.ShutDown()
+	router.Close()
 }

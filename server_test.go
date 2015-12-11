@@ -24,7 +24,7 @@ func TestCandidateSetup(t *testing.T) {
 				i++
 			}
 		}
-		server.Stop()
+		server.Close()
 	}()
 	server.candidateLoop()
 }
@@ -49,7 +49,7 @@ func TestCandidateToLeader(t *testing.T) {
 			}
 		}
 		wg.Wait()
-		server.Stop()
+		server.Close()
 	}()
 	server.candidateLoop()
 	wg.Wait()
@@ -82,7 +82,7 @@ func TestCandidateNobodyElected(t *testing.T) {
 			}
 		}
 		wg.Wait()
-		server.Stop()
+		server.Close()
 	}()
 	server.candidateLoop()
 	wg.Wait()
@@ -114,7 +114,7 @@ func TestCandidateStepDown(t *testing.T) {
 	}()
 	server.candidateLoop()
 	wg.Wait()
-	server.Stop()
+	server.Close()
 	if !waitForState(server, FOLLOWER) {
 		t.Errorf("server should have bean FOLLOWER (%d) instead %v\n", FOLLOWER, server.state)
 	}
@@ -139,7 +139,7 @@ func TestFollowerBecomeCandidate(t *testing.T) {
 	if !waitForState(server, CANDIDATE) {
 		t.Errorf("server should have bean CANDIDATE (%d) instead %v\n", CANDIDATE, server.state)
 	}
-	server.Stop()
+	server.Close()
 	close(done)
 }
 
@@ -177,7 +177,7 @@ func TestBecomeLeader(t *testing.T) {
 	if !waitForState(server, LEADER) {
 		t.Errorf("server should have bean LEADER (%d) instead %v\n", LEADER, server.state)
 	}
-	server.Stop()
+	server.Close()
 	close(done)
 }
 
@@ -229,7 +229,7 @@ out:
 		}
 		i += 1
 	}
-	server.Stop()
+	server.Close()
 	close(done)
 }
 
@@ -281,7 +281,7 @@ out:
 		}
 		i += 1
 	}
-	server.Stop()
+	server.Close()
 	close(done)
 }
 
@@ -311,7 +311,7 @@ func TestLeaderReplicateLogs(t *testing.T) {
 					}()
 				case *AppendEntries:
 					if seenFirstTerm && msg.PrevIndex == 3 {
-						server.Stop()
+						server.Close()
 						return
 					}
 					go func() {
@@ -387,7 +387,7 @@ func TestFollowerReplicateLogs(t *testing.T) {
 					aa = append(aa, msg)
 				case *RequestVote:
 					if msg.Term == Term(1001) {
-						server.Stop()
+						server.Close()
 					}
 				default:
 				}
@@ -452,7 +452,7 @@ func TestFollowerReplicateTruncateLogs(t *testing.T) {
 					aa = append(aa, msg)
 				case *RequestVote:
 					if msg.Term == Term(1001) {
-						server.Stop()
+						server.Close()
 					}
 				default:
 				}

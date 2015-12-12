@@ -1,4 +1,4 @@
-package go_rafting
+package grafting
 
 import (
 	log "github.com/Sirupsen/logrus"

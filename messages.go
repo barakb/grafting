@@ -1,4 +1,4 @@
-package go_rafting
+package grafting
 
 type Message interface {
 	From() string

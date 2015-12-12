@@ -1,4 +1,4 @@
-package go_rafting
+package grafting
 
 type StateMachine map[string]interface{}
 

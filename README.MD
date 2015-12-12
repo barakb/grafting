@@ -1,6 +1,10 @@
-go-rafting
+Grafting 
 ==========
 
 [![Build Status](https://travis-ci.org/barakb/go-rafting.svg?branch=master)](https://travis-ci.org/barakb/go-rafting)
 
-Yet another raft implementation.
+My golang raft implementation.
+For now state machine is map[string]interface{}
+TCP transport is not written yet.
+
+See sample usage in the file `servers_test.go`

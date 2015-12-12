@@ -43,6 +43,7 @@ type server struct {
 	rpcDue       map[string]time.Time
 	heartbeatDue map[string]time.Time
 	eventsChan   chan StateChangeEvent
+	stateMachine StateMachine
 	done         chan interface{}
 }
 
@@ -58,6 +59,7 @@ func NewServer(id string, peers []string, log Log) *server {
 		inboundChan:  make(chan Message),
 		rpcDue:       make(map[string]time.Time),
 		heartbeatDue: make(map[string]time.Time),
+		stateMachine: NewStateMachine(),
 		done:         make(chan interface{}),
 	}
 }
@@ -303,7 +305,7 @@ func (server *server) handleAppendEntries(request *AppendEntries) {
 				}
 			}
 			matchIndex = index
-			server.commitIndex = max(server.commitIndex, request.CommitIndex)
+			server.commit(max(server.commitIndex, request.CommitIndex))
 		}
 	}
 	server.sendMessage(&AppendEntriesResponse{message: message{server.id, request.From()},
@@ -311,6 +313,16 @@ func (server *server) handleAppendEntries(request *AppendEntries) {
 		Success:    success,
 		MatchIndex: matchIndex,
 	})
+}
+
+func (server *server) commit(commitIndex int) {
+	for _, logEntry := range server.log.Slice(server.commitIndex, commitIndex) {
+		if cmd, ok := logEntry.Command.(StateMachineCommand); ok {
+			log.Infof("Executing state machine command %#v\n", logEntry)
+			cmd.Execute(server.stateMachine)
+		}
+	}
+	server.commitIndex = commitIndex
 }
 
 func (server *server) handleAppendEntriesResponse(response *AppendEntriesResponse) {
@@ -329,6 +341,11 @@ func (server *server) handleAppendEntriesResponse(response *AppendEntriesRespons
 	}
 }
 
+func (server *server) handleStateMachineCommand(request *StateMachineCommandRequest) {
+	//todo test if state is LEADER
+	server.log.Append(LogEntry{request.Command, server.term})
+}
+
 func (server *server) advanceCommitIndex() {
 	matchIndexes := make([]int, 0)
 	matchIndexes = append(matchIndexes, server.log.Length())
@@ -338,7 +355,7 @@ func (server *server) advanceCommitIndex() {
 	sort.Ints(matchIndexes)
 	n := matchIndexes[server.quorumSize-1]
 	if server.state == LEADER && server.log.Term(n) == server.term {
-		server.commitIndex = max(server.commitIndex, n)
+		server.commit(max(server.commitIndex, n))
 	}
 }
 
@@ -355,6 +372,9 @@ func (server *server) handleMessage(message Message) (restartElectionTimeout boo
 		return true
 	case AppendEntriesResponse:
 		server.handleAppendEntriesResponse(&m)
+		return false
+	case StateMachineCommandRequest:
+		server.handleStateMachineCommand(&m)
 		return false
 	default:
 		log.Warnf("%s ignoring unexpected message type %v\n", server.id, message)

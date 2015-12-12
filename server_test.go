@@ -288,8 +288,8 @@ out:
 func TestLeaderReplicateLogs(t *testing.T) {
 	server := NewServer("server1", []string{"server2", "server3"}, NewMemoryLog())
 	server.log.Append(LogEntry{1, Term(1)})
-	server.log.Append(LogEntry{2, Term(2)})
-	server.log.Append(LogEntry{3, Term(4)})
+	server.log.Append(LogEntry{SetValue{"foo1", "bar1"}, Term(2)})
+	server.log.Append(LogEntry{SetValue{"foo2", "bar2"}, Term(4)})
 	server.term = Term(3)
 	server.eventsChan = make(chan StateChangeEvent, 100)
 	done := make(chan interface{})
@@ -352,6 +352,11 @@ func TestLeaderReplicateLogs(t *testing.T) {
 
 	if server.commitIndex != 3 {
 		t.Error("Commit index should be 3, instead", server.commitIndex)
+	}
+
+	bar, ok := server.stateMachine["foo2"]
+	if !ok || bar != "bar2" {
+		t.Errorf("After follower commit log entry 1 state machine[%q] should be %q, instead state machine is:%v", "foo2", "bar2", server.stateMachine)
 	}
 
 }
@@ -436,7 +441,7 @@ func TestFollowerReplicateTruncateLogs(t *testing.T) {
 			Term:        term,
 			PrevIndex:   0,
 			PrevTerm:    term,
-			Entries:     []LogEntry{{3, Term(3)}},
+			Entries:     []LogEntry{{SetValue{"foo", "bar"}, Term(3)}},
 			CommitIndex: 1,
 		}
 	}()
@@ -482,13 +487,20 @@ func TestFollowerReplicateTruncateLogs(t *testing.T) {
 	if le.Term != Term(3) {
 		t.Error("Server log first term should be 1, instead", server.log)
 	}
-	if le.Command != 3 {
-		t.Error("Server log first command should be 1, instead", server.log)
+	if le.Term != Term(3) {
+		t.Error("Server log first term should be 3, instead", server.log)
 	}
 	if server.commitIndex != 1 {
 		t.Error("Server commitIndex should be 1, instead", server.commitIndex)
 	}
+	bar, ok := server.stateMachine["foo"]
+	if !ok || bar != "bar" {
+		t.Errorf("After follower commit log entry 1 state machine[%q] should be %q, instead state machine is:%v", "foo", "bar", server.stateMachine)
+	}
 }
+
+//todo
+// execute commands when updating commit index.
 
 func waitForState(server *server, state State) bool {
 	for i := 0; i < 10; i++ {

@@ -1,7 +1,6 @@
 package go_rafting
 
 import (
-	"fmt"
 	"time"
 )
 
@@ -24,8 +23,8 @@ func (router Router) Register(target RouteTarget, inboundChanSize int) {
 	router.targets[target.Address()] = target
 	go router.serveOutbound(target)
 	if 0 < inboundChanSize {
-		inboundChan := make(chan Message)
-		go router.connect(target.Address(), inboundChan, target.InboundChan())
+		inboundChan := make(chan Message, inboundChanSize)
+		go router.connect(inboundChan, target.InboundChan())
 		router.inboundQueue[target.Address()] = inboundChan
 	} else {
 		router.inboundQueue[target.Address()] = target.InboundChan()
@@ -48,11 +47,10 @@ func (router Router) serveOutbound(target RouteTarget) {
 			return
 		case message := <-target.OutboundChan():
 			router.dispatch(message)
-			return
 		}
 	}
 }
-func (router Router) connect(target string, sourceChan <-chan Message, targetChan chan<- Message) {
+func (router Router) connect(sourceChan <-chan Message, targetChan chan<- Message) {
 	for {
 		select {
 		case message := <-sourceChan:
@@ -61,7 +59,7 @@ func (router Router) connect(target string, sourceChan <-chan Message, targetCha
 			case targetChan <- message:
 				continue
 			case <-time.After(time.Second * 1):
-				fmt.Printf("failed to send message %v to target %s", message, target)
+				continue
 			case <-router.done:
 				return
 			}

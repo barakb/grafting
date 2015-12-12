@@ -25,8 +25,3 @@ type StateMachineCommandRequest struct {
 	message
 	Command StateMachineCommand
 }
-
-func NewStateMachineCommand(key string, value interface{}) (request StateMachineCommandRequest) {
-	request = StateMachineCommandRequest{Command: SetValue{key, value}}
-	return request
-}

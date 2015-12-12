@@ -20,7 +20,7 @@ const (
 )
 
 const RPC_TIMEOUT = 100 * time.Millisecond
-const ELECTION_TIMEOUT = 150 * time.Millisecond
+const ELECTION_TIMEOUT = 150
 
 var TIME_ZERO time.Time = time.Time{}
 
@@ -111,9 +111,9 @@ func (server *server) sendEvent(event StateChangeEvent) {
 }
 
 func (server *server) candidateLoop() {
-	log.Infof("%s in candidate loop", server.id)
-	server.startNewElection()
-	electionTimeout := time.After(nextElectionTimeoutDuration())
+	electionTimeout := server.startNewElection()
+	timeoutTimer := time.After(electionTimeout)
+	//	log.Infof("%s in candidate loop first election timeout is %d\n", server.id, electionTimeout)
 	for server.state == CANDIDATE {
 		select {
 		case <-server.done:
@@ -121,9 +121,10 @@ func (server *server) candidateLoop() {
 		case message := <-server.inboundChan:
 			server.handleMessage(message)
 			server.becomeLeader()
-		case <-electionTimeout:
-			server.startNewElection()
-			electionTimeout = time.After(nextElectionTimeoutDuration())
+		case <-timeoutTimer:
+			electionTimeout = server.startNewElection()
+			timeoutTimer = time.After(electionTimeout)
+			//			log.Infof("%s in candidate loop next election timeout is %d", server.id, electionTimeout)
 		}
 	}
 	//	log.Infof("%s exiting candidate loop\n", server.id)
@@ -183,7 +184,7 @@ func (server *server) leaderTimer() <-chan time.Time {
 	return time.After(durationUntil(res))
 }
 
-func (server *server) startNewElection() {
+func (server *server) startNewElection() time.Duration {
 	if server.state == FOLLOWER || server.state == CANDIDATE {
 		log.Infof("%s starting new election", server.id)
 		server.term += 1
@@ -199,6 +200,7 @@ func (server *server) startNewElection() {
 		server.heartbeatDue = make(map[string]time.Time, len(server.peers))
 		server.requestVote()
 	}
+	return nextElectionTimeoutDuration()
 }
 
 func (server *server) requestVote() {
@@ -318,7 +320,7 @@ func (server *server) handleAppendEntries(request *AppendEntries) {
 func (server *server) commit(commitIndex int) {
 	for _, logEntry := range server.log.Slice(server.commitIndex, commitIndex) {
 		if cmd, ok := logEntry.Command.(StateMachineCommand); ok {
-			log.Infof("Executing state machine command %#v\n", logEntry)
+			log.Infof("%s: executing state machine command %#v\n", server.id, logEntry)
 			cmd.Execute(server.stateMachine)
 		}
 	}
@@ -360,24 +362,24 @@ func (server *server) advanceCommitIndex() {
 }
 
 func (server *server) handleMessage(message Message) (restartElectionTimeout bool) {
-	log.Infof("%s <- %#v", server.id, message)
+	log.Infof("%s <- %s: %#v", server.id, message.From(), message)
 	switch m := message.(type) {
-	case RequestVote:
-		return server.handleRequestVote(&m)
-	case RequestVoteResponse:
-		server.handleRequestVoteResponse(&m)
+	case *RequestVote:
+		return server.handleRequestVote(m)
+	case *RequestVoteResponse:
+		server.handleRequestVoteResponse(m)
 		return false
-	case AppendEntries:
-		server.handleAppendEntries(&m)
+	case *AppendEntries:
+		server.handleAppendEntries(m)
 		return true
-	case AppendEntriesResponse:
-		server.handleAppendEntriesResponse(&m)
+	case *AppendEntriesResponse:
+		server.handleAppendEntriesResponse(m)
 		return false
-	case StateMachineCommandRequest:
-		server.handleStateMachineCommand(&m)
+	case *StateMachineCommandRequest:
+		server.handleStateMachineCommand(m)
 		return false
 	default:
-		log.Warnf("%s ignoring unexpected message type %v\n", server.id, message)
+		log.Warnf("%s ignoring unexpected message from %s: %#v\n", server.id, message.From(), message)
 		return false
 	}
 }
@@ -392,7 +394,7 @@ func (server *server) stepDown(term Term, message Message) {
 }
 
 func (server *server) sendMessage(message Message) {
-	log.Infof("%s -> %#v", server.id, message)
+	log.Infof("%s -> %s: %#v", server.id, message.To(), message)
 	select {
 	case <-server.done:
 		return
@@ -440,5 +442,5 @@ func makeMap(keys []string, value int) (m map[string]int) {
 }
 
 func nextElectionTimeoutDuration() time.Duration {
-	return time.Duration(int(ELECTION_TIMEOUT) + rand.Intn(int(ELECTION_TIMEOUT)/2))
+	return time.Duration(ELECTION_TIMEOUT+rand.Intn(int(ELECTION_TIMEOUT)/2)) * time.Millisecond
 }

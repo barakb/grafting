@@ -39,7 +39,7 @@ func TestCandidateToLeader(t *testing.T) {
 			select {
 			case m := <-server.outboundChan:
 				go func() {
-					server.inboundChan <- RequestVoteResponse{message: message{m.To(), m.From()},
+					server.inboundChan <- &RequestVoteResponse{message: message{m.To(), m.From()},
 						Term:    1,
 						Granted: true,
 					}
@@ -72,7 +72,7 @@ func TestCandidateNobodyElected(t *testing.T) {
 				}
 				term := m.(*RequestVote).Term
 				go func() {
-					reply(server, RequestVoteResponse{message: message{m.To(), m.From()},
+					reply(server, &RequestVoteResponse{message: message{m.To(), m.From()},
 						Term:    term,
 						Granted: term == 2,
 					})
@@ -101,7 +101,7 @@ func TestCandidateStepDown(t *testing.T) {
 			select {
 			case m := <-server.outboundChan:
 				go func() {
-					reply(server, RequestVoteResponse{message: message{m.To(), m.From()},
+					reply(server, &RequestVoteResponse{message: message{m.To(), m.From()},
 						Term:    2,
 						Granted: false,
 					})
@@ -157,7 +157,7 @@ func TestBecomeLeader(t *testing.T) {
 				switch msg := m.(type) {
 				case *RequestVote:
 					go func() {
-						server.inboundChan <- RequestVoteResponse{message: message{msg.To(), msg.From()},
+						server.inboundChan <- &RequestVoteResponse{message: message{msg.To(), msg.From()},
 							Term:    msg.Term,
 							Granted: true,
 						}
@@ -194,14 +194,14 @@ func TestLeaderStepDownBecauseOfAppendEntriesResponse(t *testing.T) {
 				switch msg := m.(type) {
 				case *RequestVote:
 					go func() {
-						server.inboundChan <- RequestVoteResponse{message: message{msg.To(), msg.From()},
+						server.inboundChan <- &RequestVoteResponse{message: message{msg.To(), msg.From()},
 							Term:    msg.Term,
 							Granted: true,
 						}
 					}()
 				case *AppendEntries:
 					go func() {
-						server.inboundChan <- AppendEntriesResponse{message: message{msg.To(), msg.From()},
+						server.inboundChan <- &AppendEntriesResponse{message: message{msg.To(), msg.From()},
 							Term: Term(100),
 						}
 					}()
@@ -246,14 +246,14 @@ func TestLeaderStepDownBecauseOfRequestVote(t *testing.T) {
 				switch msg := m.(type) {
 				case *RequestVote:
 					go func() {
-						server.inboundChan <- RequestVoteResponse{message: message{msg.To(), msg.From()},
+						server.inboundChan <- &RequestVoteResponse{message: message{msg.To(), msg.From()},
 							Term:    msg.Term,
 							Granted: true,
 						}
 					}()
 				case *AppendEntries:
 					go func() {
-						server.inboundChan <- RequestVote{message: message{msg.To(), msg.From()},
+						server.inboundChan <- &RequestVote{message: message{msg.To(), msg.From()},
 							Term: Term(msg.Term + 1),
 						}
 					}()
@@ -304,13 +304,13 @@ func TestLeaderReplicateLogs(t *testing.T) {
 				switch msg := m.(type) {
 				case *RequestVote:
 					go func() {
-						server.inboundChan <- RequestVoteResponse{message: message{msg.To(), msg.From()},
+						server.inboundChan <- &RequestVoteResponse{message: message{msg.To(), msg.From()},
 							Term:    msg.Term,
 							Granted: true,
 						}
 					}()
 				case *AppendEntries:
-					if seenFirstTerm && msg.PrevIndex == 3 {
+					if seenFirstTerm && msg.PrevIndex == 3 && server.term == 4 && server.nextIndex["server2"] == 4 {
 						server.Close()
 						return
 					}
@@ -321,7 +321,7 @@ func TestLeaderReplicateLogs(t *testing.T) {
 						if !seenFirstTerm {
 							countDown += 1
 						}
-						server.inboundChan <- AppendEntriesResponse{message: message{msg.To(), msg.From()},
+						server.inboundChan <- &AppendEntriesResponse{message: message{msg.To(), msg.From()},
 							Term:       msg.Term,
 							MatchIndex: msg.PrevIndex + len(msg.Entries),
 							Success:    seenFirstTerm,
@@ -337,6 +337,7 @@ func TestLeaderReplicateLogs(t *testing.T) {
 		t.Error("Commit index should be zero, instead", server.commitIndex)
 	}
 	server.Run()
+	<-server.done
 	if server.term != 4 {
 		t.Error("server term should be 4, instead", server.term)
 	}
@@ -365,14 +366,14 @@ func TestFollowerReplicateLogs(t *testing.T) {
 	server := NewServer("server1", []string{"server2", "server3"}, NewMemoryLog())
 	go func() {
 		term := Term(1000)
-		server.inboundChan <- AppendEntries{message: message{"server1", "server2"},
+		server.inboundChan <- &AppendEntries{message: message{"server1", "server2"},
 			Term:        term,
 			PrevIndex:   1,
 			PrevTerm:    term,
 			Entries:     []LogEntry{},
 			CommitIndex: 0,
 		}
-		server.inboundChan <- AppendEntries{message: message{"server1", "server2"},
+		server.inboundChan <- &AppendEntries{message: message{"server1", "server2"},
 			Term:        term,
 			PrevIndex:   0,
 			PrevTerm:    term,
@@ -430,14 +431,14 @@ func TestFollowerReplicateTruncateLogs(t *testing.T) {
 	server.log.Append(LogEntry{2, 1})
 	go func() {
 		term := Term(1000)
-		server.inboundChan <- AppendEntries{message: message{"server1", "server2"},
+		server.inboundChan <- &AppendEntries{message: message{"server1", "server2"},
 			Term:        term,
 			PrevIndex:   1,
 			PrevTerm:    term,
 			Entries:     []LogEntry{},
 			CommitIndex: 0,
 		}
-		server.inboundChan <- AppendEntries{message: message{"server1", "server2"},
+		server.inboundChan <- &AppendEntries{message: message{"server1", "server2"},
 			Term:        term,
 			PrevIndex:   0,
 			PrevTerm:    term,

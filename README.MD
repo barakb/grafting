@@ -1,10 +1,14 @@
 Grafting 
 ==========
 
-[![Build Status](https://travis-ci.org/barakb/go-rafting.svg?branch=master)](https://travis-ci.org/barakb/go-rafting)
+[![Build Status](https://travis-ci.org/barakb/grafting.svg?branch=master)](https://travis-ci.org/barakb/grafting)
 
 My golang raft implementation.
-For now state machine is map[string]interface{}
+
+Grafting is after [queen rearing grafting](http://www.nsqba.com/graftingtipsinfo.html)
+
+For now state machine is `map[string]interface{}`
+
 TCP transport is not written yet.
 
-See sample usage in the file `servers_test.go`
+See sample usage in the file [servers_test.go](https://github.com/barakb/grafting/blob/master/servers_test.go)

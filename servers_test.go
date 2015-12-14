@@ -28,14 +28,22 @@ func Test3ServerReplicateData(t *testing.T) {
 	if err != nil {
 		t.Error(err.Error())
 	}
-	req := &StateMachineCommandRequest{
-		message: message{leader.id, "client"},
-		Command: SetValue{"foo", "bar"},
+	client := NewClient("client", []string{"server1", "server2", "server3"})
+	defer client.Close()
+	router.Register(client, 20)
+
+	res := <-client.Execute(SetValue{"foo", "bar"})
+	if res != nil {
+		t.Errorf("result of first command should be nil, instead %q\n", res)
 	}
-	leader.inboundChan <- req
+	res = <-client.Execute(SetValue{"foo", "bar1"})
+	if res != "bar" {
+		t.Errorf("result of second command should be %q, instead %q\n", "bar", res)
+	}
+
 	waitFor(func() bool {
 		for _, server := range servers {
-			if server.stateMachine["foo"] != "bar" {
+			if server.stateMachine["foo"] != "bar1" {
 				return false
 			}
 		}

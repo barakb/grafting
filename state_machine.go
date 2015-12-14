@@ -1,5 +1,7 @@
 package grafting
 
+import "github.com/nu7hatch/gouuid"
+
 type StateMachine map[string]interface{}
 
 func NewStateMachine() StateMachine {
@@ -23,5 +25,12 @@ func (v SetValue) Execute(sm StateMachine) interface{} {
 
 type StateMachineCommandRequest struct {
 	message
+	Uid     *uuid.UUID
 	Command StateMachineCommand
+}
+
+type StateMachineCommandResponse struct {
+	message
+	Uid         *uuid.UUID
+	ReturnValue interface{}
 }

@@ -1,6 +1,9 @@
 package grafting
 
-import "fmt"
+import (
+	"fmt"
+	"github.com/nu7hatch/gouuid"
+)
 
 type Log interface {
 	Length() int
@@ -14,6 +17,8 @@ type Log interface {
 type LogEntry struct {
 	Command interface{}
 	Term    Term
+	Uid     *uuid.UUID
+	from    string
 }
 
 type MemoryLog struct {

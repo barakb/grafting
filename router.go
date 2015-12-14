@@ -4,22 +4,22 @@ import (
 	"time"
 )
 
-type RouteTarget interface {
+type Addressable interface {
 	Address() string
-	OutboundChan() chan Message
-	InboundChan() chan Message
+	OutboundChan() <-chan Message
+	InboundChan() chan<- Message
 }
 
 type Router struct {
-	targets      map[string]RouteTarget
-	inboundQueue map[string]chan Message
+	targets      map[string]Addressable
+	inboundQueue map[string]chan<- Message
 	done         chan interface{}
 }
 
 // In case 0 < inboundChanSize the incoming trafic for this target an intermediat channel of size inboundChanSize
 // will be created by the router and all trafic to this target will to this new channel before it sent to the target inbound buffer.
 // The sending from this new buffer to the target inbound buffer will be tried for 1 second after that the message will be discarded.
-func (router Router) Register(target RouteTarget, inboundChanSize int) {
+func (router Router) Register(target Addressable, inboundChanSize int) {
 	router.targets[target.Address()] = target
 	go router.serveOutbound(target)
 	if 0 < inboundChanSize {
@@ -37,10 +37,10 @@ func (router Router) Close() error {
 }
 
 func NewRouter() Router {
-	return Router{make(map[string]RouteTarget), make(map[string]chan Message), make(chan interface{})}
+	return Router{make(map[string]Addressable), make(map[string]chan<- Message), make(chan interface{})}
 }
 
-func (router Router) serveOutbound(target RouteTarget) {
+func (router Router) serveOutbound(target Addressable) {
 	for {
 		select {
 		case <-router.done:

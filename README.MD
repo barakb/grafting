@@ -12,3 +12,16 @@ For now state machine is `map[string]interface{}`
 TCP transport is not written yet.
 
 See sample usage in the file [servers_test.go](https://github.com/barakb/grafting/blob/master/servers_test.go)
+
+There is a new client that works with the server !
+
+```Go
+	res := <-client.Execute(SetValue{"foo", "bar"})
+	if res != nil {
+		t.Errorf("result of first command should be nil, instead %q\n", res)
+	}
+	res = <-client.Execute(SetValue{"foo", "bar1"})
+	if res != "bar" {
+		t.Errorf("result of second command should be %q, instead %q\n", "bar", res)
+	}
+```

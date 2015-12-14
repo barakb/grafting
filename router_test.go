@@ -14,10 +14,10 @@ type testTarget struct {
 func (target *testTarget) Address() string {
 	return target.address
 }
-func (target *testTarget) OutboundChan() chan Message {
+func (target *testTarget) OutboundChan() <-chan Message {
 	return target.outboundChan
 }
-func (target *testTarget) InboundChan() chan Message {
+func (target *testTarget) InboundChan() chan<- Message {
 	return target.inboundChan
 }
 

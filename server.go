@@ -8,7 +8,7 @@ import (
 )
 
 func init() {
-	log.SetLevel(log.DebugLevel)
+	log.SetLevel(log.InfoLevel)
 }
 
 type State int
@@ -132,7 +132,7 @@ func (server *server) candidateLoop() {
 }
 
 func (server *server) followerLoop() {
-	log.Infof("%s in follower loop", server.id)
+	//	log.Infof("%s in follower loop", server.id)
 	electionTimeout := time.After(nextElectionTimeoutDuration())
 	for server.state == FOLLOWER {
 		select {
@@ -150,7 +150,7 @@ func (server *server) followerLoop() {
 }
 
 func (server *server) leaderLoop() {
-	log.Infof("%s in leader loop", server.id)
+	//	log.Infof("%s in leader loop", server.id)
 	timer := server.sendAllAppendEntries()
 	for server.state == LEADER {
 		select {
@@ -186,7 +186,7 @@ func (server *server) leaderTimer() <-chan time.Time {
 
 func (server *server) startNewElection() time.Duration {
 	if server.state == FOLLOWER || server.state == CANDIDATE {
-		log.Infof("%s starting new election", server.id)
+		//		log.Infof("%s starting new election", server.id)
 		server.term += 1
 		server.votedFor = server.id
 		server.setState(CANDIDATE)
@@ -320,8 +320,16 @@ func (server *server) handleAppendEntries(request *AppendEntries) {
 func (server *server) commit(commitIndex int) {
 	for _, logEntry := range server.log.Slice(server.commitIndex, commitIndex) {
 		if cmd, ok := logEntry.Command.(StateMachineCommand); ok {
-			log.Infof("%s: executing state machine command %#v\n", server.id, logEntry)
-			cmd.Execute(server.stateMachine)
+			log.Infof("%s: executing state machine command %#v", server.id, logEntry)
+			if server.state == LEADER {
+				res := cmd.Execute(server.stateMachine)
+				go func() {
+					server.outboundChan <- &StateMachineCommandResponse{message: message{to: logEntry.from, from: server.id},
+						Uid: logEntry.Uid, ReturnValue: res}
+				}()
+			} else {
+				cmd.Execute(server.stateMachine)
+			}
 		}
 	}
 	server.commitIndex = commitIndex
@@ -344,8 +352,9 @@ func (server *server) handleAppendEntriesResponse(response *AppendEntriesRespons
 }
 
 func (server *server) handleStateMachineCommand(request *StateMachineCommandRequest) {
-	//todo test if state is LEADER
-	server.log.Append(LogEntry{request.Command, server.term})
+	if server.state == LEADER {
+		server.log.Append(LogEntry{request.Command, server.term, request.Uid, request.From()})
+	}
 }
 
 func (server *server) advanceCommitIndex() {
@@ -362,7 +371,7 @@ func (server *server) advanceCommitIndex() {
 }
 
 func (server *server) handleMessage(message Message) (restartElectionTimeout bool) {
-	log.Infof("%s <- %s: %#v", server.id, message.From(), message)
+	log.Debugf("%s <- %s: %#v", server.id, message.From(), message)
 	switch m := message.(type) {
 	case *RequestVote:
 		return server.handleRequestVote(m)
@@ -386,7 +395,7 @@ func (server *server) handleMessage(message Message) (restartElectionTimeout boo
 
 func (server *server) stepDown(term Term, message Message) {
 	if server.state != FOLLOWER {
-		log.Infof("%s step down from %v -> %v at term %d, because of message %#v", server.id, server.state, FOLLOWER, term, message)
+		log.Infof("%s step down from %v -> %v at term %d, because of message %#v", server.id, server.state, FOLLOWER, server.term, message)
 	}
 	server.term = term
 	server.setState(FOLLOWER)
@@ -394,7 +403,7 @@ func (server *server) stepDown(term Term, message Message) {
 }
 
 func (server *server) sendMessage(message Message) {
-	log.Infof("%s -> %s: %#v", server.id, message.To(), message)
+	log.Debugf("%s -> %s: %#v", server.id, message.To(), message)
 	select {
 	case <-server.done:
 		return
@@ -412,11 +421,11 @@ func (server *server) Address() string {
 	return server.id
 }
 
-func (server *server) OutboundChan() chan Message {
+func (server *server) OutboundChan() <-chan Message {
 	return server.outboundChan
 }
 
-func (server *server) InboundChan() chan Message {
+func (server *server) InboundChan() chan<- Message {
 	return server.inboundChan
 }
 

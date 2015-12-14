@@ -287,9 +287,9 @@ out:
 
 func TestLeaderReplicateLogs(t *testing.T) {
 	server := NewServer("server1", []string{"server2", "server3"}, NewMemoryLog())
-	server.log.Append(LogEntry{1, Term(1)})
-	server.log.Append(LogEntry{SetValue{"foo1", "bar1"}, Term(2)})
-	server.log.Append(LogEntry{SetValue{"foo2", "bar2"}, Term(4)})
+	server.log.Append(LogEntry{Command: 1, Term: Term(1)})
+	server.log.Append(LogEntry{Command: SetValue{"foo1", "bar1"}, Term: Term(2)})
+	server.log.Append(LogEntry{Command: SetValue{"foo2", "bar2"}, Term: Term(4)})
 	server.term = Term(3)
 	server.eventsChan = make(chan StateChangeEvent, 100)
 	done := make(chan interface{})
@@ -377,7 +377,7 @@ func TestFollowerReplicateLogs(t *testing.T) {
 			Term:        term,
 			PrevIndex:   0,
 			PrevTerm:    term,
-			Entries:     []LogEntry{{1, Term(1)}},
+			Entries:     []LogEntry{{Command: 1, Term: Term(1)}},
 			CommitIndex: 0,
 		}
 	}()
@@ -427,8 +427,8 @@ func TestFollowerReplicateLogs(t *testing.T) {
 
 func TestFollowerReplicateTruncateLogs(t *testing.T) {
 	server := NewServer("server1", []string{"server2", "server3"}, NewMemoryLog())
-	server.log.Append(LogEntry{1, 1})
-	server.log.Append(LogEntry{2, 1})
+	server.log.Append(LogEntry{Command: 1, Term: 1})
+	server.log.Append(LogEntry{Command: 2, Term: 1})
 	go func() {
 		term := Term(1000)
 		server.inboundChan <- &AppendEntries{message: message{"server1", "server2"},
@@ -442,7 +442,7 @@ func TestFollowerReplicateTruncateLogs(t *testing.T) {
 			Term:        term,
 			PrevIndex:   0,
 			PrevTerm:    term,
-			Entries:     []LogEntry{{SetValue{"foo", "bar"}, Term(3)}},
+			Entries:     []LogEntry{{Command: SetValue{"foo", "bar"}, Term: Term(3)}},
 			CommitIndex: 1,
 		}
 	}()

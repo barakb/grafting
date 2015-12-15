@@ -14,18 +14,19 @@ type pendingRequest struct {
 }
 
 type Client struct {
-	address          string
-	inbound          chan Message
-	outbound         chan Message
-	requestsToHandle chan *pendingRequest
-	servers          []string
-	pendingRequests  map[string]*pendingRequest
-	done             chan interface{}
+	address           string
+	inbound           chan Message
+	outbound          chan Message
+	requestsToHandle  chan *pendingRequest
+	servers           []string
+	pendingRequests   map[string]*pendingRequest
+	retryPendingTimer <-chan time.Time
+	done              chan interface{}
 }
 
 func NewClient(address string, servers []string) *Client {
 	res := &Client{address, make(chan Message), make(chan Message), make(chan *pendingRequest),
-		servers, make(map[string]*pendingRequest), make(chan interface{})}
+		servers, make(map[string]*pendingRequest), nil, make(chan interface{})}
 	go res.run()
 	return res
 }
@@ -56,7 +57,6 @@ func (client Client) Execute(cmd StateMachineCommand) <-chan interface{} {
 
 func (client Client) run() {
 	for {
-		//todo timeout for pending request.
 		select {
 		case <-client.done:
 			return
@@ -64,14 +64,42 @@ func (client Client) run() {
 			client.handleRequest(req)
 		case req := <-client.inbound:
 			client.handleResponse(req)
+		case <-client.retryPendingTimer:
+			allDone := client.retryPendingRequests()
+			if allDone {
+				client.retryPendingTimer = nil
+			} else {
+				client.retryPendingTimer = time.After(5 * time.Second)
+			}
 		}
 	}
 }
+func (client Client) retryPendingRequests() (allDone bool) {
+	if len(client.pendingRequests) == 0 {
+		return true
+	}
+	for _, pendingReq := range client.pendingRequests {
+		client.broadcastRequest(pendingReq)
+	}
+	return false
+}
+
 func (client Client) handleRequest(req *pendingRequest) {
 	client.pendingRequests[req.uid.String()] = req
+	client.retryPendingTimer = time.After(5 * time.Second)
+	client.broadcastRequest(req)
+}
+
+func (client Client) broadcastRequest(req *pendingRequest) {
 	for _, server := range client.servers {
 		go func(server string) {
-			client.outbound <- &StateMachineCommandRequest{Command: *req.command, Uid: req.uid, message: message{to: server, from: client.address}}
+			select {
+			case client.outbound <- &StateMachineCommandRequest{Command: *req.command, Uid: req.uid, message: message{to: server, from: client.address}}:
+				return
+			case <-client.done:
+				return
+			}
+
 		}(server)
 	}
 }

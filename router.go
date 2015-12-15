@@ -54,15 +54,13 @@ func (router Router) connect(sourceChan <-chan Message, targetChan chan<- Messag
 	for {
 		select {
 		case message := <-sourceChan:
-			// put it target output channel with 1 second timeout.
 			select {
-			case targetChan <- message:
-				continue
-			case <-time.After(time.Second * 1):
-				continue
 			case <-router.done:
 				return
+			case targetChan <- message:
+			case <-time.After(time.Second * 1):
 			}
+
 		case <-router.done:
 			return
 		}
@@ -73,9 +71,7 @@ func (router Router) dispatch(message Message) {
 	if inboundChan, ok := router.inboundQueue[message.To()]; ok {
 		select {
 		case <-router.done:
-			return
 		case inboundChan <- message:
-			return
 		}
 	}
 }

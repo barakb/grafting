@@ -24,12 +24,12 @@ type Client struct {
 	retryPendingTimer   <-chan time.Time
 	retryTimeout        time.Duration
 	pendingRequestQueue chan interface{}
-	done                chan interface{}
+	done                chan struct{}
 }
 
 func NewClient(address string, servers []string) *Client {
 	res := &Client{address, make(chan Message), make(chan Message), make(chan *pendingRequest),
-		servers, list.New(), nil, 5000, make(chan interface{}, 5), make(chan interface{})}
+		servers, list.New(), nil, 5000, make(chan interface{}, 5), make(chan struct{})}
 	go res.run()
 	return res
 }
@@ -53,9 +53,8 @@ func (client Client) Close() error {
 
 func (client Client) Execute(cmd StateMachineCommand) <-chan interface{} {
 	client.pendingRequestQueue <- true // should block if there is already 5 pending requests
-	uuid, _ := uuid.NewV4()
 	res := make(chan interface{}, 1)
-	client.requestsToHandle <- &pendingRequest{uuid, res, &cmd}
+	client.requestsToHandle <- &pendingRequest{newUID(), res, &cmd}
 	return res
 }
 

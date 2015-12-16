@@ -44,7 +44,7 @@ type server struct {
 	heartbeatDue map[string]time.Time
 	eventsChan   chan StateChangeEvent
 	stateMachine StateMachine
-	done         chan interface{}
+	done         chan struct{}
 }
 
 func NewServer(id string, peers []string, log Log) *server {
@@ -60,7 +60,7 @@ func NewServer(id string, peers []string, log Log) *server {
 		rpcDue:       make(map[string]time.Time),
 		heartbeatDue: make(map[string]time.Time),
 		stateMachine: NewStateMachine(),
-		done:         make(chan interface{}),
+		done:         make(chan struct{}),
 	}
 }
 
@@ -321,14 +321,13 @@ func (server *server) commit(commitIndex int) {
 	for _, logEntry := range server.log.Slice(server.commitIndex, commitIndex) {
 		if cmd, ok := logEntry.Command.(StateMachineCommand); ok {
 			log.Infof("%s: executing state machine command %#v", server.id, logEntry)
+			res := cmd.Execute(server.stateMachine)
+			server.log.Commit(logEntry, res)
 			if server.state == LEADER {
-				res := cmd.Execute(server.stateMachine)
 				go func() {
-					server.outboundChan <- &StateMachineCommandResponse{message: message{to: logEntry.from, from: server.id},
+					server.outboundChan <- &StateMachineCommandResponse{message: message{to: logEntry.From, from: server.id},
 						Uid: logEntry.Uid, ReturnValue: res}
 				}()
-			} else {
-				cmd.Execute(server.stateMachine)
 			}
 		}
 	}

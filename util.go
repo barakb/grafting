@@ -1,6 +1,9 @@
 package grafting
 
-import "time"
+import (
+	"github.com/nu7hatch/gouuid"
+	"time"
+)
 
 const minDuration time.Duration = -1 << 63
 
@@ -23,5 +26,10 @@ func durationUntil(t time.Time) time.Duration {
 	if res == minDuration {
 		return 0
 	}
+	return res
+}
+
+func newUID() *uuid.UUID {
+	res, _ := uuid.NewV4()
 	return res
 }

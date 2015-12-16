@@ -13,7 +13,7 @@ type Addressable interface {
 type Router struct {
 	targets      map[string]Addressable
 	inboundQueue map[string]chan<- Message
-	done         chan interface{}
+	done         chan struct{}
 }
 
 // In case 0 < inboundChanSize the incoming trafic for this target an intermediat channel of size inboundChanSize
@@ -37,7 +37,7 @@ func (router Router) Close() error {
 }
 
 func NewRouter() Router {
-	return Router{make(map[string]Addressable), make(map[string]chan<- Message), make(chan interface{})}
+	return Router{make(map[string]Addressable), make(map[string]chan<- Message), make(chan struct{})}
 }
 
 func (router Router) serveOutbound(target Addressable) {

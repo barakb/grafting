@@ -126,7 +126,7 @@ func TestFollowerBecomeCandidate(t *testing.T) {
 	if !waitForState(server, FOLLOWER) {
 		t.Errorf("server should have bean follower (%d) instead %v\n", FOLLOWER, server.state)
 	}
-	done := make(chan interface{})
+	done := make(chan struct{})
 	go func() {
 		select {
 		case <-done:
@@ -145,7 +145,7 @@ func TestFollowerBecomeCandidate(t *testing.T) {
 
 func TestBecomeLeader(t *testing.T) {
 	server := NewServer("server1", []string{"server2", "server3"}, NewMemoryLog())
-	done := make(chan interface{})
+	done := make(chan struct{})
 	var requestVoteGroup sync.WaitGroup
 	requestVoteGroup.Add(2)
 	go func() {
@@ -184,7 +184,7 @@ func TestBecomeLeader(t *testing.T) {
 func TestLeaderStepDownBecauseOfAppendEntriesResponse(t *testing.T) {
 	server := NewServer("server1", []string{"server2", "server3"}, NewMemoryLog())
 	server.eventsChan = make(chan StateChangeEvent, 100)
-	done := make(chan interface{})
+	done := make(chan struct{})
 	go func() {
 		for {
 			select {
@@ -236,7 +236,7 @@ out:
 func TestLeaderStepDownBecauseOfRequestVote(t *testing.T) {
 	server := NewServer("server1", []string{"server2", "server3"}, NewMemoryLog())
 	server.eventsChan = make(chan StateChangeEvent, 100)
-	done := make(chan interface{})
+	done := make(chan struct{})
 	go func() {
 		for {
 			select {
@@ -287,12 +287,12 @@ out:
 
 func TestLeaderReplicateLogs(t *testing.T) {
 	server := NewServer("server1", []string{"server2", "server3"}, NewMemoryLog())
-	server.log.Append(LogEntry{Command: 1, Term: Term(1)})
-	server.log.Append(LogEntry{Command: SetValue{"foo1", "bar1"}, Term: Term(2)})
-	server.log.Append(LogEntry{Command: SetValue{"foo2", "bar2"}, Term: Term(4)})
+	server.log.Append(LogEntry{Command: 1, Term: Term(1), Uid: newUID(), From: "client1"})
+	server.log.Append(LogEntry{Command: SetValue{"foo1", "bar1"}, Term: Term(2), Uid: newUID(), From: "client1"})
+	server.log.Append(LogEntry{Command: SetValue{"foo2", "bar2"}, Term: Term(4), Uid: newUID(), From: "client1"})
 	server.term = Term(3)
 	server.eventsChan = make(chan StateChangeEvent, 100)
-	done := make(chan interface{})
+	done := make(chan struct{})
 	seenFirstTerm := false
 	countDown := 0
 	go func() {
@@ -377,7 +377,7 @@ func TestFollowerReplicateLogs(t *testing.T) {
 			Term:        term,
 			PrevIndex:   0,
 			PrevTerm:    term,
-			Entries:     []LogEntry{{Command: 1, Term: Term(1)}},
+			Entries:     []LogEntry{{Command: 1, Term: Term(1), Uid: newUID(), From: "client1"}},
 			CommitIndex: 0,
 		}
 	}()
@@ -427,8 +427,8 @@ func TestFollowerReplicateLogs(t *testing.T) {
 
 func TestFollowerReplicateTruncateLogs(t *testing.T) {
 	server := NewServer("server1", []string{"server2", "server3"}, NewMemoryLog())
-	server.log.Append(LogEntry{Command: 1, Term: 1})
-	server.log.Append(LogEntry{Command: 2, Term: 1})
+	server.log.Append(LogEntry{Command: 1, Term: 1, Uid: newUID(), From: "client1"})
+	server.log.Append(LogEntry{Command: 2, Term: 1, Uid: newUID(), From: "client1"})
 	go func() {
 		term := Term(1000)
 		server.inboundChan <- &AppendEntries{message: message{"server1", "server2"},
@@ -442,7 +442,7 @@ func TestFollowerReplicateTruncateLogs(t *testing.T) {
 			Term:        term,
 			PrevIndex:   0,
 			PrevTerm:    term,
-			Entries:     []LogEntry{{Command: SetValue{"foo", "bar"}, Term: Term(3)}},
+			Entries:     []LogEntry{{Command: SetValue{"foo", "bar"}, Term: Term(3), Uid: newUID(), From: "client1"}},
 			CommitIndex: 1,
 		}
 	}()

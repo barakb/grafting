@@ -12,7 +12,7 @@ import (
 func TestClientMaxPendingRequest(t *testing.T) {
 	client := NewClient("client", []string{"server1"})
 	client.retryTimeout = 200 // set retry sending request every 100 millis
-	var doneCheckRetries5Values = make(chan interface{})
+	var doneCheckRetries5Values = make(chan struct{})
 	results := make([]<-chan interface{}, 6)
 	uidMaps := make(map[int]*uuid.UUID)
 	// check the order of the retries

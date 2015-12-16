@@ -25,3 +25,8 @@ There is a new client that works with the server !
 		t.Errorf("result of second command should be %q, instead %q\n", "bar", res)
 	}
 ```
+
+- [x] client allow up to 5 pending request after that it block.
+- [x] client send retries to servers in the right order.
+- [ ] server send for each client the 5 last request and (response)
+- [ ] server ignore retry if response not ready otherwise send old response.

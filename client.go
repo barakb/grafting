@@ -1,8 +1,10 @@
 package grafting
 
 import (
+	"container/list"
 	log "github.com/Sirupsen/logrus"
 	"github.com/nu7hatch/gouuid"
+	"sync"
 	"time"
 )
 
@@ -10,23 +12,24 @@ type pendingRequest struct {
 	uid             *uuid.UUID
 	responseChannel chan<- interface{}
 	command         *StateMachineCommand
-	time            time.Time
 }
 
 type Client struct {
-	address           string
-	inbound           chan Message
-	outbound          chan Message
-	requestsToHandle  chan *pendingRequest
-	servers           []string
-	pendingRequests   map[string]*pendingRequest
-	retryPendingTimer <-chan time.Time
-	done              chan interface{}
+	address             string
+	inbound             chan Message
+	outbound            chan Message
+	requestsToHandle    chan *pendingRequest
+	servers             []string
+	pendingRequests     *list.List
+	retryPendingTimer   <-chan time.Time
+	retryTimeout        time.Duration
+	pendingRequestQueue chan interface{}
+	done                chan interface{}
 }
 
 func NewClient(address string, servers []string) *Client {
 	res := &Client{address, make(chan Message), make(chan Message), make(chan *pendingRequest),
-		servers, make(map[string]*pendingRequest), nil, make(chan interface{})}
+		servers, list.New(), nil, 5000, make(chan interface{}, 5), make(chan interface{})}
 	go res.run()
 	return res
 }
@@ -49,9 +52,10 @@ func (client Client) Close() error {
 }
 
 func (client Client) Execute(cmd StateMachineCommand) <-chan interface{} {
-	res := make(chan interface{}, 1)
+	client.pendingRequestQueue <- true // should block if there is already 5 pending requests
 	uuid, _ := uuid.NewV4()
-	client.requestsToHandle <- &pendingRequest{uuid, res, &cmd, time.Now()}
+	res := make(chan interface{}, 1)
+	client.requestsToHandle <- &pendingRequest{uuid, res, &cmd}
 	return res
 }
 
@@ -69,30 +73,36 @@ func (client Client) run() {
 			if allDone {
 				client.retryPendingTimer = nil
 			} else {
-				client.retryPendingTimer = time.After(5 * time.Second)
+				client.retryPendingTimer = time.After(client.retryTimeout * time.Millisecond)
 			}
 		}
 	}
 }
 func (client Client) retryPendingRequests() (allDone bool) {
-	if len(client.pendingRequests) == 0 {
+	if client.pendingRequests.Len() == 0 {
 		return true
 	}
-	for _, pendingReq := range client.pendingRequests {
-		client.broadcastRequest(pendingReq)
+	for e := client.pendingRequests.Front(); e != nil; e = e.Next() {
+		client.broadcastRequest(e.Value.(*pendingRequest))
 	}
 	return false
 }
 
 func (client Client) handleRequest(req *pendingRequest) {
-	client.pendingRequests[req.uid.String()] = req
-	client.retryPendingTimer = time.After(5 * time.Second)
+	if client.alreadySent(req) {
+		return
+	}
+	client.pendingRequests.PushBack(req)
+	client.retryPendingTimer = time.After(client.retryTimeout * time.Millisecond)
 	client.broadcastRequest(req)
 }
 
 func (client Client) broadcastRequest(req *pendingRequest) {
+	var wg sync.WaitGroup
 	for _, server := range client.servers {
+		wg.Add(1)
 		go func(server string) {
+			defer wg.Done()
 			select {
 			case client.outbound <- &StateMachineCommandRequest{Command: *req.command, Uid: req.uid, message: message{to: server, from: client.address}}:
 				return
@@ -102,19 +112,40 @@ func (client Client) broadcastRequest(req *pendingRequest) {
 
 		}(server)
 	}
+	wg.Wait()
 }
 
 func (client Client) handleResponse(req Message) {
 	switch m := req.(type) {
 	case *StateMachineCommandResponse:
-		pendingRequest, ok := client.pendingRequests[m.Uid.String()]
+		pendingRequest, ok := client.removePendingRequest(*m.Uid)
 		if !ok {
+			//todo how can this happen ?
 			log.Warnf("%s ignoring expired StateMachineCommandResponse from %s: %#v\n", client.address, m.From(), req)
 			return
 		}
 		pendingRequest.responseChannel <- m.ReturnValue
-		delete(client.pendingRequests, m.Uid.String())
+		<-client.pendingRequestQueue
 	default:
 		log.Warnf("%s ignoring unexpected message from %s: %#v\n", client.address, m.From(), req)
 	}
+}
+
+func (client Client) alreadySent(req *pendingRequest) bool {
+	for e := client.pendingRequests.Front(); e != nil; e = e.Next() {
+		if e.Value.(*pendingRequest).uid == req.uid {
+			return true
+		}
+	}
+	return false
+}
+
+func (client Client) removePendingRequest(uid uuid.UUID) (*pendingRequest, bool) {
+	for e := client.pendingRequests.Front(); e != nil; e = e.Next() {
+		if *(e.Value.(*pendingRequest).uid) == uid {
+			value := client.pendingRequests.Remove(e)
+			return value.(*pendingRequest), true
+		}
+	}
+	return nil, false
 }

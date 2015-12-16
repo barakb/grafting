@@ -1,6 +1,8 @@
 package grafting
 
-import "github.com/nu7hatch/gouuid"
+import (
+	"github.com/nu7hatch/gouuid"
+)
 
 type StateMachine map[string]interface{}
 

@@ -25,6 +25,7 @@ func Test3ServerReplicateData(t *testing.T) {
 	}
 
 	leader, err := leader(server1, server2, server3)
+	fmt.Printf("leader is %s\n", leader.id)
 	if err != nil {
 		t.Error(err.Error())
 	}
@@ -48,7 +49,7 @@ func Test3ServerReplicateData(t *testing.T) {
 			}
 		}
 		return true
-	}, 250, fmt.Sprintf("leader state machine should contains key named %q\n", leader.stateMachine), t)
+	}, 500, fmt.Sprintf("all state machine should contains key named %q with value named %q, server1:%q, server2:%q, server3:%q\n", "foo", "bar1", server1.stateMachine, server2.stateMachine, server3.stateMachine), t)
 }
 
 func leader(s1 *server, s2 *server, s3 *server) (*server, error) {

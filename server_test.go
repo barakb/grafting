@@ -520,7 +520,7 @@ func TestServerSaveLast5RequestFromEachClient(t *testing.T) {
 	if server.commitIndex != 1 {
 		t.Errorf("server should commit the first log entry, instead %d", server.commitIndex)
 	}
-	time.Sleep(20 * time.Millisecond)
+	becomeALeader(server)
 	close(done)
 	// send req 1 again expect to have the result in the outputbound channel.
 	server.handleStateMachineCommand(req1)

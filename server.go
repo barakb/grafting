@@ -319,10 +319,8 @@ func (server *server) commit(commitIndex int) {
 			res := cmd.Execute(server.stateMachine)
 			server.log.Commit(logEntry, res)
 			if server.state == LEADER {
-				go func() {
-					server.outboundChan <- &StateMachineCommandResponse{message: message{to: logEntry.From, from: server.id},
-						Uid: logEntry.Uid, ReturnValue: res}
-				}()
+				server.sendMessageAsync(&StateMachineCommandResponse{message: message{to: logEntry.From, from: server.id},
+					Uid: logEntry.Uid, ReturnValue: res})
 			}
 		}
 	}
@@ -350,17 +348,24 @@ func (server *server) handleStateMachineCommand(request *StateMachineCommandRequ
 	if server.state == LEADER {
 		// handle in process requests
 		if res, found, hasValue := server.log.IsRequestPresent(request.from, (*request.Uid).String()); found {
+			//			log.Infof("command uid:%s found:%v, hasValue:%v, res:%v", (*request.Uid).String(), found, hasValue, res)
 			if hasValue {
 				//send value again
-				go func() {
-					server.outboundChan <- &StateMachineCommandResponse{message: message{to: request.from, from: server.id},
-						Uid: request.Uid, ReturnValue: res}
-				}()
+				server.sendMessageAsync(&StateMachineCommandResponse{message: message{to: request.from, from: server.id},
+					Uid: request.Uid, ReturnValue: res})
 			}
 			return
 		}
+
 		server.log.Append(LogEntry{request.Command, server.term, request.Uid, request.From()})
 	}
+}
+
+func (server *server) sendMessageAsync(msg Message) {
+	go func() {
+		//		log.Infof("sending async message %#v", msg)
+		server.sendMessage(msg)
+	}()
 }
 
 func (server *server) advanceCommitIndex() {
@@ -420,7 +425,6 @@ func (server *server) sendMessage(message Message) {
 	case server.outboundChan <- message:
 		return
 	}
-
 }
 
 /*

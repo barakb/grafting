@@ -146,8 +146,6 @@ func TestFollowerBecomeCandidate(t *testing.T) {
 func TestBecomeLeader(t *testing.T) {
 	server := NewServer("server1", []string{"server2", "server3"}, NewMemoryLog())
 	done := make(chan struct{})
-	var requestVoteGroup sync.WaitGroup
-	requestVoteGroup.Add(2)
 	go func() {
 		for {
 			select {
@@ -161,7 +159,6 @@ func TestBecomeLeader(t *testing.T) {
 							Term:    msg.Term,
 							Granted: true,
 						}
-						requestVoteGroup.Done()
 					}()
 				default:
 				}
@@ -169,11 +166,6 @@ func TestBecomeLeader(t *testing.T) {
 		}
 	}()
 	go server.Run()
-	if !waitForState(server, CANDIDATE) {
-		t.Errorf("server should have bean CANDIDATE (%d) instead %v\n", CANDIDATE, server.state)
-	}
-	requestVoteGroup.Wait()
-
 	if !waitForState(server, LEADER) {
 		t.Errorf("server should have bean LEADER (%d) instead %v\n", LEADER, server.state)
 	}

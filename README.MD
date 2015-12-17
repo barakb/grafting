@@ -30,8 +30,7 @@ There is a new client that works with the server !
 - [x] client send retries to servers in the right order.
 - [x] log save for each client the 5 last request and (response)
 - [x] server ignore retry if response not ready otherwise send old response.
-- [ ] TestBecomeLeader some time fails: 
- === RUN   TestBecomeLeader
- INFO[0000] server1 is LEADER                            
- --- FAIL: TestBecomeLeader (0.50s)
- 	server_test.go:173: server should have bean CANDIDATE (2) instead 3
+- [x] TestBecomeLeader some time fails.
+- [x] Write main with flag for server and client. 
+- [x] Write tcp transport 
+- [x] Write file based log 

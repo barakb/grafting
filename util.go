@@ -33,3 +33,11 @@ func newUID() *uuid.UUID {
 	res, _ := uuid.NewV4()
 	return res
 }
+
+func makeIntMap(keys []string, value int) (m map[string]int) {
+	m = make(map[string]int)
+	for _, key := range keys {
+		m[key] = value
+	}
+	return m
+}

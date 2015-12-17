@@ -14,7 +14,7 @@ type Log interface {
 	RemoveLast() LogEntry
 	Append(entry LogEntry)
 	NextIndex() int
-	IsRequestPresent(clientName string, uid string) (interface{}, bool)
+	IsRequestPresent(clientName string, uid string) (res interface{}, found bool, hasValue bool)
 	Commit(entry LogEntry, res interface{})
 }
 
@@ -26,8 +26,9 @@ type LogEntry struct {
 }
 
 type clientRequest struct {
-	Entry  *LogEntry
-	Result interface{}
+	Entry    *LogEntry
+	HasValue bool
+	Result   interface{}
 }
 
 type MemoryLog struct {
@@ -77,6 +78,7 @@ func (log *MemoryLog) Commit(entry LogEntry, res interface{}) {
 			clientRequest := e.Value.(*clientRequest)
 			if (*clientRequest.Entry.Uid).String() == (*entry.Uid).String() {
 				clientRequest.Result = res
+				clientRequest.HasValue = true
 				return
 			}
 		}
@@ -84,17 +86,17 @@ func (log *MemoryLog) Commit(entry LogEntry, res interface{}) {
 	logger.Fatalf("When commiting entry: %#v with result:%#v clientLastRequest not found in clientLastRequests %#v", entry, res, log.clientLastRequests)
 }
 
-func (log MemoryLog) IsRequestPresent(clientName string, uid string) (interface{}, bool) {
+func (log MemoryLog) IsRequestPresent(clientName string, uid string) (res interface{}, found bool, hasValue bool) {
 	if lst, ok := log.clientLastRequests[clientName]; ok {
 		for e := lst.Front(); e != nil; e = e.Next() {
 			clientRequest := e.Value.(*clientRequest)
 			if (*clientRequest.Entry.Uid).String() == uid {
-				return clientRequest.Result, true
+				return clientRequest.Result, true, clientRequest.HasValue
 			}
 		}
 
 	}
-	return nil, false
+	return nil, false, false
 }
 
 func (log MemoryLog) String() string {

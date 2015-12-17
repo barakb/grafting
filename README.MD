@@ -28,5 +28,10 @@ There is a new client that works with the server !
 
 - [x] client allow up to 5 pending request after that it block.
 - [x] client send retries to servers in the right order.
-- [ ] log save for each client the 5 last request and (response)
-- [ ] server ignore retry if response not ready otherwise send old response.
+- [x] log save for each client the 5 last request and (response)
+- [x] server ignore retry if response not ready otherwise send old response.
+- [ ] TestBecomeLeader some time fails: 
+ === RUN   TestBecomeLeader
+ INFO[0000] server1 is LEADER                            
+ --- FAIL: TestBecomeLeader (0.50s)
+ 	server_test.go:173: server should have bean CANDIDATE (2) instead 3

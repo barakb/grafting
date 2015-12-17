@@ -1,7 +1,6 @@
 package grafting
 
 import (
-	"fmt"
 	"testing"
 )
 
@@ -41,7 +40,6 @@ func TestMemoryLogAppend(t *testing.T) {
 	if log.Length() != 1 {
 		t.Fatal("log length should be 1 instead", log.Length())
 	}
-	fmt.Printf("silce is %#v\n", log.Slice(0, 1))
 	if log.Term(1) != 2 {
 		t.Fatal("last log term should be 2 instead", log.Term(0))
 	}
@@ -58,21 +56,21 @@ func TestMemoryLogLastRequest(t *testing.T) {
 	log := NewMemoryLog()
 	uid := newUID()
 	clientName := "client1"
-	if value, found := log.IsRequestPresent(clientName, (*uid).String()); found {
+	if value, found, _ := log.IsRequestPresent(clientName, (*uid).String()); found {
 		t.Fatalf("there should be no last requst for client %s, instead found %#v", clientName, value)
 	}
 	log.Append(LogEntry{Command: 1, Term: 2, From: clientName, Uid: uid})
-	if _, found := log.IsRequestPresent(clientName, (*uid).String()); !found {
+	if _, found, _ := log.IsRequestPresent(clientName, (*uid).String()); !found {
 		t.Fatalf("there should be a last requst for client %s", clientName)
 	}
 	log.Commit(log.Slice(0, 1)[0], "foo")
-	if value, found := log.IsRequestPresent(clientName, (*uid).String()); !found || value != "foo" {
+	if value, found, _ := log.IsRequestPresent(clientName, (*uid).String()); !found || value != "foo" {
 		t.Fatalf("there should be a last requst for client %s and the value should be %q, instead %#v", clientName, "foo", value)
 	}
 	for i := 0; i < 5; i++ {
 		log.Append(LogEntry{Command: 1, Term: 2, From: clientName, Uid: newUID()})
 	}
-	if value, found := log.IsRequestPresent(clientName, (*uid).String()); found {
+	if value, found, _ := log.IsRequestPresent(clientName, (*uid).String()); found {
 		t.Fatalf("the old request uid=%s for client %s, should be purge by now, instead found %#v", (*uid).String(), clientName, value)
 	}
 

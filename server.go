@@ -113,7 +113,6 @@ func (server *server) sendEvent(event StateChangeEvent) {
 func (server *server) candidateLoop() {
 	electionTimeout := server.startNewElection()
 	timeoutTimer := time.After(electionTimeout)
-	//	log.Infof("%s in candidate loop first election timeout is %d\n", server.id, electionTimeout)
 	for server.state == CANDIDATE {
 		select {
 		case <-server.done:
@@ -124,15 +123,12 @@ func (server *server) candidateLoop() {
 		case <-timeoutTimer:
 			electionTimeout = server.startNewElection()
 			timeoutTimer = time.After(electionTimeout)
-			//			log.Infof("%s in candidate loop next election timeout is %d", server.id, electionTimeout)
 		}
 	}
-	//	log.Infof("%s exiting candidate loop\n", server.id)
 	return
 }
 
 func (server *server) followerLoop() {
-	//	log.Infof("%s in follower loop", server.id)
 	electionTimeout := time.After(nextElectionTimeoutDuration())
 	for server.state == FOLLOWER {
 		select {
@@ -150,7 +146,6 @@ func (server *server) followerLoop() {
 }
 
 func (server *server) leaderLoop() {
-	//	log.Infof("%s in leader loop", server.id)
 	timer := server.sendAllAppendEntries()
 	for server.state == LEADER {
 		select {
@@ -213,7 +208,7 @@ func (server *server) requestVote() {
 func (server *server) becomeLeader() {
 	if votes := countVotes(server.voteGranted); server.state == CANDIDATE && server.quorumSize <= votes {
 		server.setState(LEADER)
-		server.nextIndex = makeMap(server.peers, server.log.Length())
+		server.nextIndex = makeIntMap(server.peers, server.log.Length())
 		for _, key := range server.peers {
 			server.nextIndex[key] = server.log.NextIndex()
 		}
@@ -340,6 +335,7 @@ func (server *server) handleAppendEntriesResponse(response *AppendEntriesRespons
 	}
 	if server.state == LEADER && server.term == response.Term {
 		if response.Success {
+			//			log.Infof("server.matchIndex[response.From()] = %d, response.MatchIndex=%d", server.matchIndex[response.From()], response.MatchIndex)
 			server.matchIndex[response.From()] = max(server.matchIndex[response.From()], response.MatchIndex)
 			server.nextIndex[response.From()] = response.MatchIndex + 1
 			server.advanceCommitIndex()
@@ -352,6 +348,17 @@ func (server *server) handleAppendEntriesResponse(response *AppendEntriesRespons
 
 func (server *server) handleStateMachineCommand(request *StateMachineCommandRequest) {
 	if server.state == LEADER {
+		// handle in process requests
+		if res, found, hasValue := server.log.IsRequestPresent(request.from, (*request.Uid).String()); found {
+			if hasValue {
+				//send value again
+				go func() {
+					server.outboundChan <- &StateMachineCommandResponse{message: message{to: request.from, from: server.id},
+						Uid: request.Uid, ReturnValue: res}
+				}()
+			}
+			return
+		}
 		server.log.Append(LogEntry{request.Command, server.term, request.Uid, request.From()})
 	}
 }
@@ -362,8 +369,12 @@ func (server *server) advanceCommitIndex() {
 	for _, value := range server.matchIndex {
 		matchIndexes = append(matchIndexes, value)
 	}
-	sort.Ints(matchIndexes)
+
+	sort.Sort(sort.Reverse(sort.IntSlice(matchIndexes)))
+	//	sort.Ints(matchIndexes)
+
 	n := matchIndexes[server.quorumSize-1]
+	//	log.Infof("matchIndexes=%#v, server.quorumSize-1=%d, n=%d\n", matchIndexes, server.quorumSize-1, n)
 	if server.state == LEADER && server.log.Term(n) == server.term {
 		server.commit(max(server.commitIndex, n))
 	}
@@ -440,14 +451,6 @@ func countVotes(m map[string]bool) (res int) {
 /*
  * Functions
  */
-
-func makeMap(keys []string, value int) (m map[string]int) {
-	m = make(map[string]int)
-	for _, key := range keys {
-		m[key] = value
-	}
-	return m
-}
 
 func nextElectionTimeoutDuration() time.Duration {
 	return time.Duration(ELECTION_TIMEOUT+rand.Intn(int(ELECTION_TIMEOUT)/2)) * time.Millisecond

@@ -500,8 +500,81 @@ func TestFollowerReplicateTruncateLogs(t *testing.T) {
 	}
 }
 
-//todo
-// execute commands when updating commit index.
+func TestServerSaveLast5RequestFromEachClient(t *testing.T) {
+	server := NewServer("server1", []string{"server2", "server3"}, NewMemoryLog())
+	becomeALeader(server)
+
+	done := readServerOutbound(server)
+	req1 := &StateMachineCommandRequest{Command: SetValue{"foo", "bar"}, Uid: newUID(), message: message{to: "server1", from: "client1"}}
+	server.handleStateMachineCommand(req1)
+	if server.log.Length() != 1 {
+		t.Errorf("log should have one entry after server handle command instead %#v", server.log)
+	}
+	// retry req and see that no entry added to the log.
+	server.handleStateMachineCommand(req1)
+	if server.log.Length() != 1 {
+		t.Errorf("log should have one entry after server handle command instead %#v", server.log)
+	}
+	// send another command and see that it is append to log
+	req2 := &StateMachineCommandRequest{Command: SetValue{"foo", "bar1"}, Uid: newUID(), message: message{to: "server1", from: "client1"}}
+	server.handleStateMachineCommand(req2)
+	if server.log.Length() != 2 {
+		t.Errorf("log should have 2 entries after server handle command instead %#v", server.log)
+	}
+	// make the server commit req1
+	server.handleAppendEntriesResponse(&AppendEntriesResponse{message: message{"server1", "server2"},
+		Term: server.term, Success: true, MatchIndex: 1,
+	})
+	if server.commitIndex != 1 {
+		t.Errorf("server should commit the first log entry, instead %d", server.commitIndex)
+	}
+	time.Sleep(20 * time.Millisecond)
+	close(done)
+	// send req 1 again expect to have the result in the outputbound channel.
+	server.handleStateMachineCommand(req1)
+	if server.log.Length() != 2 {
+		t.Errorf("log should have 2 entries after server handle command instead %#v", server.log)
+	}
+	if server.commitIndex != 1 {
+		t.Errorf("server should commit the first log entry, instead %d", server.commitIndex)
+	}
+	msg := <-server.outboundChan
+	if msg.(*StateMachineCommandResponse).Uid.String() != req1.Uid.String() {
+		t.Errorf("expect reply with uid %s instead got %#v", req1.Uid.String(), msg)
+	}
+}
+
+func readServerOutbound(server *server) (done chan struct{}) {
+	done = make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			case <-server.outboundChan:
+			}
+		}
+	}()
+	return done
+}
+
+func becomeALeader(server *server) {
+	server.voteGranted = make(map[string]bool, len(server.peers))
+	server.matchIndex = make(map[string]int, len(server.peers))
+	server.nextIndex = make(map[string]int, len(server.peers))
+	for _, key := range server.peers {
+		server.nextIndex[key] = 1
+	}
+
+	server.state = LEADER
+	server.nextIndex = makeIntMap(server.peers, server.log.Length())
+	for _, key := range server.peers {
+		server.nextIndex[key] = server.log.NextIndex()
+	}
+	server.rpcDue = make(map[string]time.Time, len(server.peers))
+	server.heartbeatDue = make(map[string]time.Time, len(server.peers))
+
+}
 
 func waitForState(server *server, state State) bool {
 	for i := 0; i < 10; i++ {

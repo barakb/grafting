@@ -1,6 +1,7 @@
 package grafting
 
 import (
+	logger "github.com/Sirupsen/logrus"
 	"time"
 )
 
@@ -58,10 +59,23 @@ func (router Router) connect(sourceChan <-chan Message, targetChan chan<- Messag
 			case <-router.done:
 				return
 			case targetChan <- message:
-			case <-time.After(time.Second * 1):
+			case <-time.After(time.Millisecond * 60):
+				router.drain(sourceChan)
 			}
-
 		case <-router.done:
+			return
+		}
+	}
+}
+
+func (router Router) drain(sourceChan <-chan Message) {
+	for i := 0; i < 100; i++ {
+		select {
+		case <-router.done:
+			return
+		case <-sourceChan:
+		default:
+			logger.Infof("%d drained ------------------------------------------------------------------------------------------- \n", i)
 			return
 		}
 	}

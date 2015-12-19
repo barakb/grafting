@@ -1,14 +1,14 @@
 package grafting
 
 import (
-	log "github.com/Sirupsen/logrus"
+	logger "github.com/Sirupsen/logrus"
 	"math/rand"
 	"sort"
 	"time"
 )
 
 func init() {
-	log.SetLevel(log.InfoLevel)
+	logger.SetLevel(logger.InfoLevel)
 }
 
 type State int
@@ -101,10 +101,9 @@ func (server *server) sendEvent(event StateChangeEvent) {
 			select {
 			case <-server.done:
 				return
-			case <-time.After(10 * time.Millisecond):
-				return
 			case server.eventsChan <- event:
 				return
+			default:
 			}
 		}()
 	}
@@ -214,7 +213,7 @@ func (server *server) becomeLeader() {
 		}
 		server.rpcDue = make(map[string]time.Time, len(server.peers))
 		server.heartbeatDue = make(map[string]time.Time, len(server.peers))
-		log.Infof("%s is LEADER", server.id)
+		logger.Infof("%s is LEADER", server.id)
 	}
 }
 
@@ -237,7 +236,6 @@ func (server *server) sendAppendEntries(peer string) {
 			CommitIndex: min(server.commitIndex, lastIndex),
 		}
 		server.sendMessage(msg)
-
 	}
 }
 
@@ -289,7 +287,8 @@ func (server *server) handleAppendEntries(request *AppendEntries) {
 	}
 	if server.term == request.Term {
 		server.setState(FOLLOWER)
-		if request.PrevIndex == 0 || (request.PrevIndex <= server.log.Length() && server.log.Term(request.PrevIndex) == request.PrevTerm) {
+		if request.PrevIndex == 0 ||
+			(request.PrevIndex <= server.log.Length() && server.log.Term(request.PrevIndex) == request.PrevTerm) {
 			success = true
 			index := request.PrevIndex
 			for _, entry := range request.Entries {
@@ -315,7 +314,7 @@ func (server *server) handleAppendEntries(request *AppendEntries) {
 func (server *server) commit(commitIndex int) {
 	for _, logEntry := range server.log.Slice(server.commitIndex, commitIndex) {
 		if cmd, ok := logEntry.Command.(StateMachineCommand); ok {
-			log.Infof("%s: executing state machine command %#v", server.id, logEntry)
+			logger.Infof("%s: executing state machine command %#v", server.id, logEntry)
 			res := cmd.Execute(server.stateMachine)
 			server.log.Commit(logEntry, res)
 			if server.state == LEADER {
@@ -386,7 +385,7 @@ func (server *server) advanceCommitIndex() {
 }
 
 func (server *server) handleMessage(message Message) (restartElectionTimeout bool) {
-	log.Debugf("%s <- %s: %#v", server.id, message.From(), message)
+	logger.Debugf("%s <- %s: %#v", server.id, message.From(), message)
 	switch m := message.(type) {
 	case *RequestVote:
 		return server.handleRequestVote(m)
@@ -403,14 +402,14 @@ func (server *server) handleMessage(message Message) (restartElectionTimeout boo
 		server.handleStateMachineCommand(m)
 		return false
 	default:
-		log.Warnf("%s ignoring unexpected message from %s: %#v\n", server.id, message.From(), message)
+		logger.Warnf("%s ignoring unexpected message from %s: %#v\n", server.id, message.From(), message)
 		return false
 	}
 }
 
 func (server *server) stepDown(term Term, message Message) {
 	if server.state != FOLLOWER {
-		log.Infof("%s step down from %v -> %v at term %d, because of message %#v", server.id, server.state, FOLLOWER, server.term, message)
+		logger.Infof("%s step down from %v -> %v at term %d, because of message %#v", server.id, server.state, FOLLOWER, server.term, message)
 	}
 	server.term = term
 	server.setState(FOLLOWER)
@@ -418,7 +417,7 @@ func (server *server) stepDown(term Term, message Message) {
 }
 
 func (server *server) sendMessage(message Message) {
-	log.Debugf("%s -> %s: %#v", server.id, message.To(), message)
+	logger.Debugf("%s -> %s: %#v", server.id, message.To(), message)
 	select {
 	case <-server.done:
 		return

@@ -3,6 +3,7 @@ package grafting
 import (
 	"errors"
 	"fmt"
+	//	logger "github.com/Sirupsen/logrus"
 	"testing"
 	"time"
 )
@@ -77,10 +78,12 @@ func leader(s1 *server, s2 *server, s3 *server) (*server, error) {
 type predicate func() bool
 
 func waitFor(pred predicate, millis int, msg string, t *testing.T) {
+	//	defer logger.SetLevel(logger.InfoLevel)
 	for i := 0; i < 10; i++ {
 		if pred() {
 			return
 		}
+		fmt.Printf("pred failed, sleeping for %v !\n", time.Duration(millis)*time.Millisecond/10)
 		time.Sleep(time.Duration(millis) * time.Millisecond / 10)
 	}
 	if pred() {

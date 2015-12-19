@@ -2,7 +2,7 @@ package grafting
 
 import (
 	"container/list"
-	log "github.com/Sirupsen/logrus"
+	logger "github.com/Sirupsen/logrus"
 	"github.com/nu7hatch/gouuid"
 	"sync"
 	"time"
@@ -120,13 +120,13 @@ func (client Client) handleResponse(req Message) {
 		pendingRequest, ok := client.removePendingRequest(*m.Uid)
 		if !ok {
 			//todo how can this happen ?
-			log.Warnf("%s ignoring expired StateMachineCommandResponse from %s: %#v\n", client.address, m.From(), req)
+			logger.Warnf("%s ignoring expired StateMachineCommandResponse from %s: %#v\n", client.address, m.From(), req)
 			return
 		}
 		pendingRequest.responseChannel <- m.ReturnValue
 		<-client.pendingRequestQueue
 	default:
-		log.Warnf("%s ignoring unexpected message from %s: %#v\n", client.address, m.From(), req)
+		logger.Warnf("%s ignoring unexpected message from %s: %#v\n", client.address, m.From(), req)
 	}
 }
 

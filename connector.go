@@ -52,7 +52,7 @@ func TCPTransportFactory(address string) (Transport, error) {
 type connector struct {
 	addressable           Addressable
 	remoteAddresses       []string
-	inboundChannel        chan<- Message
+	inboundChannel        chan <- Message
 	outboundChannel       <-chan Message
 	pools                 map[string]Pool
 	encoderDecoderBuilder EncoderDecoderBuilder
@@ -100,8 +100,13 @@ func (c connector) listen() {
 	for {
 		conn, err := c.listener.Accept()
 		if err != nil {
-			fmt.Println("Error accepting: ", err.Error())
-			return
+			select {
+			case <-c.done:
+				return
+			default:
+				fmt.Println("Error accepting: ", err.Error())
+			}
+			continue
 		}
 		go c.handleRequest(conn)
 	}
@@ -113,7 +118,9 @@ func (c connector) handleRequest(conn net.Conn) {
 		var m Message
 		err := decoder.Decode(&m)
 		if err != nil {
-			fmt.Println("Error decoding: ", err.Error())
+			if err != io.EOF {
+				fmt.Println("Error decoding: ", err.Error())
+			}
 			return
 		}
 		select {
@@ -193,7 +200,9 @@ func NewConnector(addressable Addressable, remoteAddresses []string, transportFa
 	for _, remoteAddress := range remoteAddresses {
 		connector.pools[remoteAddress] = createPoolFor(remoteAddress, poolSize, connector.encoderDecoderBuilder, transportFactory)
 	}
-	go connector.forwardSend()
+	for _ = range remoteAddresses {
+		go connector.forwardSend()
+	}
 	go connector.listen()
 	return &connector
 }

@@ -1,5 +1,16 @@
 package grafting
 
+import "encoding/gob"
+
+func init() {
+	gob.Register(RequestVote{})
+	gob.Register(RequestVoteResponse{})
+	gob.Register(AppendEntries{})
+	gob.Register(AppendEntriesResponse{})
+	gob.Register(StateChangeEvent{})
+
+}
+
 type Message interface {
 	From() string
 	To() string

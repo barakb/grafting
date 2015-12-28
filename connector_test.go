@@ -51,8 +51,8 @@ func TestTCPConnectorSendToServer(t *testing.T) {
 		t.Errorf("Failed to reveive message %#v", message)
 	}
 }
-
-func _TestTCPConnectorSendToClient(t *testing.T) {
+/*
+func TestTCPConnectorSendToClient(t *testing.T) {
 
 	addressable := addressable{"localhost:0", make(chan Message), make(chan Message)}
 	listener, err := net.Listen("tcp", "localhost:0")
@@ -118,3 +118,4 @@ func interfaceDecode(dec *gob.Decoder) (Message, error) {
 func interfaceEncode(enc *gob.Encoder, m Message) error {
 	return enc.Encode(&m)
 }
+*/

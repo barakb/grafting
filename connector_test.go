@@ -1,7 +1,6 @@
 package grafting
 
 import (
-	"encoding/gob"
 	"fmt"
 	"net"
 	"testing"

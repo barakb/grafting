@@ -8,6 +8,7 @@ func init() {
 	gob.Register(AppendEntries{})
 	gob.Register(AppendEntriesResponse{})
 	gob.Register(StateChangeEvent{})
+	gob.Register(Msg{})
 
 }
 
@@ -16,34 +17,34 @@ type Message interface {
 	To() string
 }
 
-type message struct {
-	from string
-	to   string
+type Msg struct {
+	F string
+	T string
 }
 
-func (message message) From() string {
-	return message.from
+func (message Msg) From() string {
+	return message.F
 }
 
-func (message message) To() string {
-	return message.to
+func (message Msg) To() string {
+	return message.T
 }
 
 type RequestVote struct {
-	message
+	Msg
 	Term         Term
 	LastLogTerm  Term
 	LastLogIndex int
 }
 
 type RequestVoteResponse struct {
-	message
+	Msg
 	Term    Term
 	Granted bool
 }
 
 type AppendEntries struct {
-	message
+	Msg
 	Term        Term
 	PrevIndex   int
 	PrevTerm    Term
@@ -52,7 +53,7 @@ type AppendEntries struct {
 }
 
 type AppendEntriesResponse struct {
-	message
+	Msg
 	Term       Term
 	Success    bool
 	MatchIndex int

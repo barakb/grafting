@@ -228,7 +228,7 @@ func (server *server) sendAppendEntries(peer string) {
 		if server.matchIndex[peer]+1 < server.nextIndex[peer] {
 			lastIndex = prevIndex
 		}
-		msg := &AppendEntries{message: message{server.id, peer},
+		msg := &AppendEntries{Msg: Msg{server.id, peer},
 			Term:        server.term,
 			PrevIndex:   prevIndex,
 			PrevTerm:    server.log.Term(prevIndex),
@@ -241,7 +241,7 @@ func (server *server) sendAppendEntries(peer string) {
 
 func (server *server) sendRequestVote(peer string) time.Time {
 	if server.state == CANDIDATE {
-		server.sendMessage(&RequestVote{message: message{server.id, peer},
+		server.sendMessage(&RequestVote{Msg: Msg{server.id, peer},
 			Term:         server.term,
 			LastLogTerm:  server.log.Term(server.log.Length()),
 			LastLogIndex: server.log.Length(),
@@ -262,7 +262,7 @@ func (server *server) handleRequestVote(request *RequestVote) (granted bool) {
 		granted = true
 		server.votedFor = request.From()
 	}
-	server.sendMessage(&RequestVoteResponse{message: message{server.id, request.From()},
+	server.sendMessage(&RequestVoteResponse{Msg: Msg{server.id, request.From()},
 		Term:    server.term,
 		Granted: granted,
 	})
@@ -304,7 +304,7 @@ func (server *server) handleAppendEntries(request *AppendEntries) {
 			server.commit(max(server.commitIndex, request.CommitIndex))
 		}
 	}
-	server.sendMessage(&AppendEntriesResponse{message: message{server.id, request.From()},
+	server.sendMessage(&AppendEntriesResponse{Msg: Msg{server.id, request.From()},
 		Term:       server.term,
 		Success:    success,
 		MatchIndex: matchIndex,
@@ -318,7 +318,7 @@ func (server *server) commit(commitIndex int) {
 			res := cmd.Execute(server.stateMachine)
 			server.log.Commit(logEntry, res)
 			if server.state == LEADER {
-				server.sendMessageAsync(&StateMachineCommandResponse{message: message{to: logEntry.From, from: server.id},
+				server.sendMessageAsync(&StateMachineCommandResponse{Msg: Msg{T: logEntry.From, F: server.id},
 					Uid: logEntry.Uid, ReturnValue: res})
 			}
 		}
@@ -346,11 +346,11 @@ func (server *server) handleAppendEntriesResponse(response *AppendEntriesRespons
 func (server *server) handleStateMachineCommand(request *StateMachineCommandRequest) {
 	if server.state == LEADER {
 		// handle in process requests
-		if res, found, hasValue := server.log.IsRequestPresent(request.from, (*request.Uid).String()); found {
+		if res, found, hasValue := server.log.IsRequestPresent(request.F, (*request.Uid).String()); found {
 			//			log.Infof("command uid:%s found:%v, hasValue:%v, res:%v", (*request.Uid).String(), found, hasValue, res)
 			if hasValue {
 				//send value again
-				server.sendMessageAsync(&StateMachineCommandResponse{message: message{to: request.from, from: server.id},
+				server.sendMessageAsync(&StateMachineCommandResponse{Msg: Msg{T: request.F, F: server.id},
 					Uid: request.Uid, ReturnValue: res})
 			}
 			return

@@ -103,7 +103,7 @@ func (client Client) broadcastRequest(req *pendingRequest) {
 		go func(server string) {
 			defer wg.Done()
 			select {
-			case client.outbound <- &StateMachineCommandRequest{Command: *req.command, Uid: req.uid, message: message{to: server, from: client.address}}:
+			case client.outbound <- &StateMachineCommandRequest{Command: *req.command, Uid: req.uid, Msg: Msg{T: server, F: client.address}}:
 				return
 			case <-client.done:
 				return

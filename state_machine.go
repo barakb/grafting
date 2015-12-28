@@ -26,13 +26,13 @@ func (v SetValue) Execute(sm StateMachine) interface{} {
 }
 
 type StateMachineCommandRequest struct {
-	message
+	Msg
 	Uid     *uuid.UUID
 	Command StateMachineCommand
 }
 
 type StateMachineCommandResponse struct {
-	message
+	Msg
 	Uid         *uuid.UUID
 	ReturnValue interface{}
 }

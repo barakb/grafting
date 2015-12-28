@@ -52,7 +52,7 @@ func TCPTransportFactory(address string) (Transport, error) {
 type connector struct {
 	addressable           Addressable
 	remoteAddresses       []string
-	inboundChannel        chan <- Message
+	inboundChannel        chan<- Message
 	outboundChannel       <-chan Message
 	pools                 map[string]Pool
 	encoderDecoderBuilder EncoderDecoderBuilder
@@ -72,13 +72,16 @@ func (c connector) Close() error {
 func (c connector) Send(m Message) error {
 	if pool, ok := c.pools[m.To()]; ok {
 		if con, err := pool.get(); err == nil {
-			defer pool.putBack(con)
-			return con.Encode(&m)
+			if err = con.Encode(&m); err != nil {
+				return err
+			}
+			pool.putBack(con)
+
 		} else {
 			return err
 		}
 	}
-	return fmt.Errorf("address not found %#v", m)
+	return fmt.Errorf("Send failed, address not found %#v", m)
 }
 
 func (c connector) forwardSend() {
@@ -112,26 +115,30 @@ func (c connector) listen() {
 	}
 }
 func (c connector) handleRequest(conn net.Conn) {
-	defer conn.Close()
-	decoder := c.encoderDecoderBuilder.Decoder(conn)
+	connection := &connection{conn, c.encoderDecoderBuilder.Encoder(conn), c.encoderDecoderBuilder.Decoder(conn), false, ""}
+	defer connection.Close()
+
 	for {
 		var m Message
-		err := decoder.Decode(&m)
+		err := connection.decoder.Decode(&m)
 		if err != nil {
 			if err != io.EOF {
 				fmt.Println("Error decoding: ", err.Error())
 			}
 			return
 		}
+		if connection.to == "" && m.From() != "" {
+			connection.to = m.From()
+			//			c.publishClientConnection(connection)  //c.pools.putBack(connection) //todo
+		}
+		// forward the message
 		select {
 		case <-c.done:
 			return
 		case c.addressable.InboundChan() <- m:
 		}
 	}
-
 }
-
 
 type Pool struct {
 	remoteAddress         string
@@ -148,7 +155,11 @@ func (p Pool) get() (Conn, error) {
 	case res := <-p.connections:
 		return res, nil
 	case <-time.After(20 * time.Millisecond):
-		return p.openNewConnection()
+		if p.transportFactory != nil {
+			return p.openNewConnection()
+		} else {
+			return nil, nil
+		}
 	}
 }
 
@@ -158,22 +169,27 @@ func (p Pool) putBack(connection Conn) {
 		connection.Close()
 	case p.connections <- connection:
 	case <-time.After(20 * time.Millisecond):
-		connection.Close()
+		if p.transportFactory != nil {
+			connection.Close()
+		}
 	}
 }
 
 func (p Pool) Close() error {
 	close(p.done)
 	close(p.connections)
-	for {
-		select {
-		case res, ok := <-p.connections:
-			if !ok {
-				return nil
+	if p.transportFactory != nil {
+		for {
+			select {
+			case res, ok := <-p.connections:
+				if !ok {
+					return nil
+				}
+				res.Close()
 			}
-			res.Close()
 		}
 	}
+	return nil
 }
 
 func (p Pool) openNewConnection() (Conn, error) {
@@ -181,7 +197,7 @@ func (p Pool) openNewConnection() (Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &connection{c, p.encoderDecoderBuilder.Encoder(c), p.encoderDecoderBuilder.Decoder(c)}, nil
+	return &connection{c, p.encoderDecoderBuilder.Encoder(c), p.encoderDecoderBuilder.Decoder(c), false, ""}, nil
 }
 
 func createPoolFor(remoteAddress string, size int, encoderDecoderBuilder EncoderDecoderBuilder, transportFactory TransportFactory) Pool {
@@ -222,9 +238,12 @@ type connection struct {
 	transport Transport
 	encoder   Encoder
 	decoder   Decoder
+	closed    bool
+	to        string
 }
 
 func (c connection) Close() error {
+	c.closed = true
 	return c.transport.Close()
 }
 func (c connection) Encode(e interface{}) error {

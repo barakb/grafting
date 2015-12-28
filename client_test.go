@@ -53,7 +53,7 @@ func TestClientMaxPendingRequest(t *testing.T) {
 	close(doneCheckRetries5Values)
 
 	// reply to the first request this should remove it from the pending request and the 6 request should return.
-	client.inbound <- &StateMachineCommandResponse{message: message{to: "client", from: "server1"},
+	client.inbound <- &StateMachineCommandResponse{Msg: Msg{T: "client", F: "server1"},
 		Uid: uidMaps[0], ReturnValue: nil,
 	}
 

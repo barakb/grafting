@@ -39,7 +39,7 @@ func TestCandidateToLeader(t *testing.T) {
 			select {
 			case m := <-server.outboundChan:
 				go func() {
-					server.inboundChan <- &RequestVoteResponse{message: message{m.To(), m.From()},
+					server.inboundChan <- &RequestVoteResponse{Msg: Msg{m.To(), m.From()},
 						Term:    1,
 						Granted: true,
 					}
@@ -72,7 +72,7 @@ func TestCandidateNobodyElected(t *testing.T) {
 				}
 				term := m.(*RequestVote).Term
 				go func() {
-					reply(server, &RequestVoteResponse{message: message{m.To(), m.From()},
+					reply(server, &RequestVoteResponse{Msg: Msg{m.To(), m.From()},
 						Term:    term,
 						Granted: term == 2,
 					})
@@ -101,7 +101,7 @@ func TestCandidateStepDown(t *testing.T) {
 			select {
 			case m := <-server.outboundChan:
 				go func() {
-					reply(server, &RequestVoteResponse{message: message{m.To(), m.From()},
+					reply(server, &RequestVoteResponse{Msg: Msg{m.To(), m.From()},
 						Term:    2,
 						Granted: false,
 					})
@@ -155,7 +155,7 @@ func TestBecomeLeader(t *testing.T) {
 				switch msg := m.(type) {
 				case *RequestVote:
 					go func() {
-						server.inboundChan <- &RequestVoteResponse{message: message{msg.To(), msg.From()},
+						server.inboundChan <- &RequestVoteResponse{Msg: Msg{msg.To(), msg.From()},
 							Term:    msg.Term,
 							Granted: true,
 						}
@@ -186,14 +186,14 @@ func TestLeaderStepDownBecauseOfAppendEntriesResponse(t *testing.T) {
 				switch msg := m.(type) {
 				case *RequestVote:
 					go func() {
-						server.inboundChan <- &RequestVoteResponse{message: message{msg.To(), msg.From()},
+						server.inboundChan <- &RequestVoteResponse{Msg: Msg{msg.To(), msg.From()},
 							Term:    msg.Term,
 							Granted: true,
 						}
 					}()
 				case *AppendEntries:
 					go func() {
-						server.inboundChan <- &AppendEntriesResponse{message: message{msg.To(), msg.From()},
+						server.inboundChan <- &AppendEntriesResponse{Msg: Msg{msg.To(), msg.From()},
 							Term: Term(100),
 						}
 					}()
@@ -238,14 +238,14 @@ func TestLeaderStepDownBecauseOfRequestVote(t *testing.T) {
 				switch msg := m.(type) {
 				case *RequestVote:
 					go func() {
-						server.inboundChan <- &RequestVoteResponse{message: message{msg.To(), msg.From()},
+						server.inboundChan <- &RequestVoteResponse{Msg: Msg{msg.To(), msg.From()},
 							Term:    msg.Term,
 							Granted: true,
 						}
 					}()
 				case *AppendEntries:
 					go func() {
-						server.inboundChan <- &RequestVote{message: message{msg.To(), msg.From()},
+						server.inboundChan <- &RequestVote{Msg: Msg{msg.To(), msg.From()},
 							Term: Term(msg.Term + 1),
 						}
 					}()
@@ -296,7 +296,7 @@ func TestLeaderReplicateLogs(t *testing.T) {
 				switch msg := m.(type) {
 				case *RequestVote:
 					go func() {
-						server.inboundChan <- &RequestVoteResponse{message: message{msg.To(), msg.From()},
+						server.inboundChan <- &RequestVoteResponse{Msg: Msg{msg.To(), msg.From()},
 							Term:    msg.Term,
 							Granted: true,
 						}
@@ -313,7 +313,7 @@ func TestLeaderReplicateLogs(t *testing.T) {
 						if !seenFirstTerm {
 							countDown += 1
 						}
-						server.inboundChan <- &AppendEntriesResponse{message: message{msg.To(), msg.From()},
+						server.inboundChan <- &AppendEntriesResponse{Msg: Msg{msg.To(), msg.From()},
 							Term:       msg.Term,
 							MatchIndex: msg.PrevIndex + len(msg.Entries),
 							Success:    seenFirstTerm,
@@ -358,14 +358,14 @@ func TestFollowerReplicateLogs(t *testing.T) {
 	server := NewServer("server1", []string{"server2", "server3"}, NewMemoryLog())
 	go func() {
 		term := Term(1000)
-		server.inboundChan <- &AppendEntries{message: message{"server1", "server2"},
+		server.inboundChan <- &AppendEntries{Msg: Msg{"server1", "server2"},
 			Term:        term,
 			PrevIndex:   1,
 			PrevTerm:    term,
 			Entries:     []LogEntry{},
 			CommitIndex: 0,
 		}
-		server.inboundChan <- &AppendEntries{message: message{"server1", "server2"},
+		server.inboundChan <- &AppendEntries{Msg: Msg{"server1", "server2"},
 			Term:        term,
 			PrevIndex:   0,
 			PrevTerm:    term,
@@ -423,14 +423,14 @@ func TestFollowerReplicateTruncateLogs(t *testing.T) {
 	server.log.Append(LogEntry{Command: 2, Term: 1, Uid: newUID(), From: "client1"})
 	go func() {
 		term := Term(1000)
-		server.inboundChan <- &AppendEntries{message: message{"server1", "server2"},
+		server.inboundChan <- &AppendEntries{Msg: Msg{"server1", "server2"},
 			Term:        term,
 			PrevIndex:   1,
 			PrevTerm:    term,
 			Entries:     []LogEntry{},
 			CommitIndex: 0,
 		}
-		server.inboundChan <- &AppendEntries{message: message{"server1", "server2"},
+		server.inboundChan <- &AppendEntries{Msg: Msg{"server1", "server2"},
 			Term:        term,
 			PrevIndex:   0,
 			PrevTerm:    term,
@@ -497,7 +497,7 @@ func TestServerSaveLast5RequestFromEachClient(t *testing.T) {
 	becomeALeader(server)
 
 	done := readServerOutbound(server)
-	req1 := &StateMachineCommandRequest{Command: SetValue{"foo", "bar"}, Uid: newUID(), message: message{to: "server1", from: "client1"}}
+	req1 := &StateMachineCommandRequest{Command: SetValue{"foo", "bar"}, Uid: newUID(), Msg: Msg{T: "server1", F: "client1"}}
 	server.handleStateMachineCommand(req1)
 	if server.log.Length() != 1 {
 		t.Errorf("log should have one entry after server handle command instead %#v", server.log)
@@ -508,13 +508,13 @@ func TestServerSaveLast5RequestFromEachClient(t *testing.T) {
 		t.Errorf("log should have one entry after server handle command instead %#v", server.log)
 	}
 	// send another command and see that it is append to log
-	req2 := &StateMachineCommandRequest{Command: SetValue{"foo", "bar1"}, Uid: newUID(), message: message{to: "server1", from: "client1"}}
+	req2 := &StateMachineCommandRequest{Command: SetValue{"foo", "bar1"}, Uid: newUID(), Msg: Msg{T: "server1", F: "client1"}}
 	server.handleStateMachineCommand(req2)
 	if server.log.Length() != 2 {
 		t.Errorf("log should have 2 entries after server handle command instead %#v", server.log)
 	}
 	// make the server commit req1
-	server.handleAppendEntriesResponse(&AppendEntriesResponse{message: message{"server1", "server2"},
+	server.handleAppendEntriesResponse(&AppendEntriesResponse{Msg: Msg{"server1", "server2"},
 		Term: server.term, Success: true, MatchIndex: 1,
 	})
 	if server.commitIndex != 1 {

@@ -32,5 +32,6 @@ There is a new client that works with the server !
 - [x] server ignore retry if response not ready otherwise send old response.
 - [x] TestBecomeLeader some time fails.
 - [x] Write main with flag for server and client. 
-- [x] Write tcp transport 
-- [x] Write file based log 
+- [ ] Write tcp transport 
+    - [ ] Write pools with none closable pool for connection opened by clients. 
+- [ ] Write file based log 

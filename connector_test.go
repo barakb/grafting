@@ -24,8 +24,7 @@ func (ts addressable) InboundChan() chan<- Message {
 	return ts.in
 }
 
-func TestTCPConnector(t *testing.T) {
-	gob.Register(RequestVoteResponse{})
+func TestTCPConnectorSendToServer(t *testing.T) {
 
 	addressable := addressable{"localhost:0", make(chan Message), make(chan Message)}
 	listener, err := net.Listen("tcp", "localhost:0")
@@ -34,7 +33,7 @@ func TestTCPConnector(t *testing.T) {
 	}
 	tcpConnector := NewTCPConnector(addressable, []string{listener.Addr().String()}, listener, 2)
 	defer tcpConnector.Close()
-	message := RequestVoteResponse{message: message{listener.Addr().String(), listener.Addr().String()},
+	message := RequestVoteResponse{Msg: Msg{listener.Addr().String(), listener.Addr().String()},
 		Term:    1,
 		Granted: true,
 	}
@@ -53,3 +52,69 @@ func TestTCPConnector(t *testing.T) {
 	}
 }
 
+func _TestTCPConnectorSendToClient(t *testing.T) {
+
+	addressable := addressable{"localhost:0", make(chan Message), make(chan Message)}
+	listener, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Errorf("Failed to create test listener %v", err)
+	}
+	client, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		t.Errorf("Failed to open connection to %s, %v", listener.Addr().String(), err)
+	}
+	defer client.Close()
+
+	tcpConnector := NewTCPConnector(addressable, []string{listener.Addr().String()}, listener, 2)
+	defer tcpConnector.Close()
+	// foo is a logical name.
+	// once the client send message from "foo" that is not one of the server list,
+	// the connector will send any message to foo using this connections.
+	//	fromFoo := RequestVoteResponse{message: message{from:"foo", to:listener.Addr().String()},
+	//		Term:    1,
+	//		Granted: true,
+	//	}
+	toFoo := RequestVoteResponse{Msg: Msg{F: listener.Addr().String(), T: "foo"},
+		Term:    1,
+		Granted: true,
+	}
+
+	// first send the toFoo message from the client to open connection from server to foo.
+	enc := gob.NewEncoder(client)
+	interfaceEncode(enc, toFoo)
+	select {
+	case msg := <-addressable.in:
+		fmt.Printf("Got message from client %#v\n", msg)
+	case <-time.After(500 * time.Millisecond):
+		t.Errorf("Failed to send %#v", toFoo)
+	}
+	// now send request from the server to foo
+	select {
+	case addressable.out <- toFoo:
+	case <-time.After(500 * time.Millisecond):
+		t.Errorf("Failed to send %#v", toFoo)
+	}
+
+	dec := gob.NewDecoder(client)
+
+	// message should be sent to client.
+	client.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	msg, err := interfaceDecode(dec)
+	if err != nil {
+		t.Errorf("Server failed to send message to client by logical name %#v", toFoo)
+	} else if msg.To() != "foo" {
+		t.Errorf("Unexpected message %#v", msg)
+	}
+}
+
+func interfaceDecode(dec *gob.Decoder) (Message, error) {
+	// The decode will fail unless the concrete type on the wire has been
+	// registered. We registered it in the calling function.
+	var m Message
+	err := dec.Decode(&m)
+	return m, err
+}
+
+func interfaceEncode(enc *gob.Encoder, m Message) error {
+	return enc.Encode(&m)
+}

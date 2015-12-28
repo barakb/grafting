@@ -1,6 +1,7 @@
 package grafting
 
 import (
+	"encoding/gob"
 	"fmt"
 	"net"
 	"testing"
@@ -50,7 +51,7 @@ func TestTCPConnectorSendToServer(t *testing.T) {
 		t.Errorf("Failed to reveive message %#v", message)
 	}
 }
-/*
+
 func TestTCPConnectorSendToClient(t *testing.T) {
 
 	addressable := addressable{"localhost:0", make(chan Message), make(chan Message)}
@@ -69,25 +70,29 @@ func TestTCPConnectorSendToClient(t *testing.T) {
 	// foo is a logical name.
 	// once the client send message from "foo" that is not one of the server list,
 	// the connector will send any message to foo using this connections.
-	//	fromFoo := RequestVoteResponse{message: message{from:"foo", to:listener.Addr().String()},
+	//	fromFoo := RequestVoteResponse{Msg: Msg{F: "foo", T: listener.Addr().String()},
 	//		Term:    1,
 	//		Granted: true,
 	//	}
-	toFoo := RequestVoteResponse{Msg: Msg{F: listener.Addr().String(), T: "foo"},
+	fromFoo := RequestVoteResponse{Msg: Msg{F: "foo", T: listener.Addr().String()},
 		Term:    1,
 		Granted: true,
 	}
 
 	// first send the toFoo message from the client to open connection from server to foo.
 	enc := gob.NewEncoder(client)
-	interfaceEncode(enc, toFoo)
+	interfaceEncode(enc, fromFoo)
 	select {
-	case msg := <-addressable.in:
-		fmt.Printf("Got message from client %#v\n", msg)
+	case <-addressable.in:
 	case <-time.After(500 * time.Millisecond):
-		t.Errorf("Failed to send %#v", toFoo)
+		t.Errorf("Failed to send %#v", fromFoo)
 	}
+
 	// now send request from the server to foo
+	toFoo := RequestVoteResponse{Msg: Msg{F: listener.Addr().String(), T: "foo"},
+		Term:    1,
+		Granted: true,
+	}
 	select {
 	case addressable.out <- toFoo:
 	case <-time.After(500 * time.Millisecond):
@@ -96,11 +101,11 @@ func TestTCPConnectorSendToClient(t *testing.T) {
 
 	dec := gob.NewDecoder(client)
 
-	// message should be sent to client.
+	// message should be sent to client via the socket that the client opened.
 	client.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 	msg, err := interfaceDecode(dec)
 	if err != nil {
-		t.Errorf("Server failed to send message to client by logical name %#v", toFoo)
+		t.Errorf("Server failed to send message to client by logical name %#v", fromFoo)
 	} else if msg.To() != "foo" {
 		t.Errorf("Unexpected message %#v", msg)
 	}
@@ -117,4 +122,3 @@ func interfaceDecode(dec *gob.Decoder) (Message, error) {
 func interfaceEncode(enc *gob.Encoder, m Message) error {
 	return enc.Encode(&m)
 }
-*/

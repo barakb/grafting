@@ -1,6 +1,7 @@
 package grafting
 
 import (
+	"bufio"
 	"encoding/gob"
 	"fmt"
 	logger "github.com/Sirupsen/logrus"
@@ -43,6 +44,7 @@ type Transport interface {
 	io.Reader
 	io.Writer
 	Closer
+	SetWriteDeadline(t time.Time) error
 }
 
 type TransportFactory func(address string) (Transport, error)
@@ -60,6 +62,7 @@ type connector struct {
 	encoderDecoderBuilder EncoderDecoderBuilder
 	transportFactory      TransportFactory
 	listener              net.Listener
+	writeTimeout          time.Duration
 	done                  chan struct{}
 }
 
@@ -114,7 +117,7 @@ func (c connector) listen() {
 	}
 }
 func (c connector) handleRequest(conn net.Conn) {
-	connection := &connection{conn, c.encoderDecoderBuilder.Encoder(conn), c.encoderDecoderBuilder.Decoder(conn), false, "", false}
+	connection := newConnection(conn, c.encoderDecoderBuilder, false, c.writeTimeout)
 	defer func() {
 		connection.closed = true
 		connection.transport.Close()
@@ -148,6 +151,7 @@ type Pool struct {
 	encoderDecoderBuilder  EncoderDecoderBuilder
 	transportFactory       TransportFactory
 	allowOpenNewConnection bool
+	writeTimeout           time.Duration
 	done                   chan struct{}
 }
 
@@ -192,24 +196,25 @@ func (p Pool) openNewConnection() (Conn, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &connection{c, p.encoderDecoderBuilder.Encoder(c), p.encoderDecoderBuilder.Decoder(c), false, "", true}, nil
+		return newConnection(c, p.encoderDecoderBuilder, false, p.writeTimeout), nil
 	}
 	return nil, fmt.Errorf("pool %s can not create new connections", p.remoteAddress)
 }
 
-func createPoolFor(remoteAddress string, size int, encoderDecoderBuilder EncoderDecoderBuilder, transportFactory TransportFactory, allowOpenNewConnection bool) *Pool {
-	return &Pool{remoteAddress, make(chan Conn, size), encoderDecoderBuilder, transportFactory, allowOpenNewConnection, make(chan struct{})}
+func createPoolFor(remoteAddress string, size int, encoderDecoderBuilder EncoderDecoderBuilder, transportFactory TransportFactory, allowOpenNewConnection bool, writeTimeout time.Duration) *Pool {
+	return &Pool{remoteAddress, make(chan Conn, size), encoderDecoderBuilder, transportFactory, allowOpenNewConnection, writeTimeout, make(chan struct{})}
 }
 
 type Pools struct {
 	sync.RWMutex
 	pools                 map[string]*Pool
 	maxSize               int
+	writeTimeout          time.Duration
 	encoderDecoderBuilder EncoderDecoderBuilder
 }
 
-func CreatePools(maxSize int, encoderDecoderBuilder EncoderDecoderBuilder) *Pools {
-	return &Pools{pools: make(map[string]*Pool), maxSize: maxSize, encoderDecoderBuilder: encoderDecoderBuilder}
+func CreatePools(maxSize int, writeTimeout time.Duration, encoderDecoderBuilder EncoderDecoderBuilder) *Pools {
+	return &Pools{pools: make(map[string]*Pool), maxSize: maxSize, writeTimeout: writeTimeout, encoderDecoderBuilder: encoderDecoderBuilder}
 }
 func (p *Pools) get(to string) (Conn, error) {
 	p.RLock()
@@ -222,7 +227,7 @@ func (p *Pools) get(to string) (Conn, error) {
 }
 
 func (p *Pools) getOrCreatePool(to string) *Pool {
-	created := createPoolFor(to, p.maxSize, p.encoderDecoderBuilder, nil, false)
+	created := createPoolFor(to, p.maxSize, p.encoderDecoderBuilder, nil, false, p.writeTimeout)
 	p.Lock()
 	pool, ok := p.pools[to]
 	if !ok {
@@ -252,17 +257,17 @@ func (p *Pools) putBack(connection Conn) {
 	pool.putBack(connection)
 }
 
-func NewTCPConnector(addressable Addressable, remoteAddresses []string, listener net.Listener, poolSize int) *connector {
-	return NewConnector(addressable, remoteAddresses, TCPTransportFactory, listener, poolSize)
+func NewTCPConnector(addressable Addressable, remoteAddresses []string, listener net.Listener, poolSize int, writeTimeout time.Duration) *connector {
+	return NewConnector(addressable, remoteAddresses, TCPTransportFactory, listener, poolSize, writeTimeout)
 }
-func NewConnector(addressable Addressable, remoteAddresses []string, transportFactory TransportFactory, listener net.Listener, poolSize int) *connector {
+func NewConnector(addressable Addressable, remoteAddresses []string, transportFactory TransportFactory, listener net.Listener, poolSize int, writeTimeout time.Duration) *connector {
 
-	connector := connector{addressable: addressable, remoteAddresses: remoteAddresses, transportFactory: transportFactory, listener: listener}
+	connector := connector{addressable: addressable, remoteAddresses: remoteAddresses, transportFactory: transportFactory, listener: listener, writeTimeout: writeTimeout}
 	connector.done = make(chan struct{})
 	connector.encoderDecoderBuilder = GobEncoderDecoderBuilder{}
-	connector.pools = CreatePools(poolSize, connector.encoderDecoderBuilder)
+	connector.pools = CreatePools(poolSize, writeTimeout, connector.encoderDecoderBuilder)
 	for _, remoteAddress := range remoteAddresses {
-		connector.pools.pools[remoteAddress] = createPoolFor(remoteAddress, poolSize, connector.encoderDecoderBuilder, transportFactory, true)
+		connector.pools.pools[remoteAddress] = createPoolFor(remoteAddress, poolSize, connector.encoderDecoderBuilder, transportFactory, true, writeTimeout)
 	}
 	for _ = range remoteAddresses {
 		go connector.forwardSend()
@@ -289,6 +294,13 @@ type connection struct {
 	closed       bool
 	to           string
 	initiateByMe bool
+	writeTimeout time.Duration
+	bufWriter    *bufio.Writer
+}
+
+func newConnection(transport Transport, encoderDecoderBuilder EncoderDecoderBuilder, initiateByMe bool, writeTimeout time.Duration) *connection {
+	bufWriter := bufio.NewWriter(transport)
+	return &connection{transport, encoderDecoderBuilder.Encoder(bufWriter), encoderDecoderBuilder.Decoder(transport), false, "", initiateByMe, writeTimeout, bufWriter}
 }
 
 func (c connection) Close() error {
@@ -300,8 +312,18 @@ func (c connection) Close() error {
 }
 
 func (c connection) Encode(e interface{}) error {
-	return c.encoder.Encode(e)
+	if err := c.encoder.Encode(e); err != nil {
+		return err
+	}
+	if err := c.transport.SetWriteDeadline(time.Now().Add(c.writeTimeout)); err != nil {
+		return err
+	}
+	if err := c.bufWriter.Flush(); err != nil {
+		return err
+	}
+	return nil
 }
+
 func (c connection) Decode(e interface{}) error {
 	return c.decoder.Decode(e)
 }

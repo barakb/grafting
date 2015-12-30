@@ -31,7 +31,7 @@ func TestTCPConnectorSendToServer(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to create test listener %v", err)
 	}
-	tcpConnector := NewTCPConnector(addressable, []string{listener.Addr().String()}, listener, 2)
+	tcpConnector := NewTCPConnector(addressable, []string{listener.Addr().String()}, listener, 2, time.Millisecond*500)
 	defer tcpConnector.Close()
 	message := RequestVoteResponse{Msg: Msg{listener.Addr().String(), listener.Addr().String()},
 		Term:    1,
@@ -65,7 +65,7 @@ func TestTCPConnectorSendToClient(t *testing.T) {
 	}
 	defer client.Close()
 
-	tcpConnector := NewTCPConnector(addressable, []string{listener.Addr().String()}, listener, 2)
+	tcpConnector := NewTCPConnector(addressable, []string{listener.Addr().String()}, listener, 2, time.Millisecond*500)
 	defer tcpConnector.Close()
 	// foo is a logical name.
 	// once the client send message from "foo" that is not one of the server list,

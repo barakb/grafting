@@ -50,6 +50,21 @@ func TestTCPConnectorSendToServer(t *testing.T) {
 	case <-time.After(500 * time.Millisecond):
 		t.Errorf("Failed to reveive message %#v", message)
 	}
+
+	fmt.Printf("sending second message\n")
+
+	select {
+	case addressable.out <- message:
+	case <-time.After(500 * time.Millisecond):
+		t.Errorf("Failed to send %#v", message)
+	}
+
+	select {
+	case msg := <-addressable.in:
+		fmt.Printf("Got message %#v\n", msg)
+	case <-time.After(500 * time.Millisecond):
+		t.Errorf("Failed to reveive message %#v", message)
+	}
 }
 
 func TestTCPConnectorSendToClient(t *testing.T) {

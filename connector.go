@@ -2,7 +2,6 @@ package grafting
 
 import (
 	"encoding/gob"
-	"fmt"
 	logger "github.com/Sirupsen/logrus"
 	"io"
 	"net"
@@ -77,6 +76,7 @@ func (c connector) forwardSend() {
 		case <-c.done:
 			return
 		case msg := <-c.addressable.OutboundChan():
+			//			logger.Infof("connector forward request %#v", msg)
 			err := c.Send(msg)
 			if err != nil {
 				logger.Warn("Fail to send message %#v, error is %#v", msg, err)
@@ -94,7 +94,7 @@ func (c connector) listen() {
 			case <-c.done:
 				return
 			default:
-				fmt.Println("Error accepting: ", err.Error())
+				logger.Warnf("Error accepting: %s", err.Error())
 			}
 			continue
 		}
@@ -102,7 +102,7 @@ func (c connector) listen() {
 	}
 }
 func (c connector) handleRequest(conn net.Conn) {
-	connection := newConnection(conn, c.encoderDecoderBuilder, false, c.writeTimeout)
+	connection := newConnection(conn, "", c.encoderDecoderBuilder, false, c.writeTimeout)
 	defer func() {
 		connection.closed = true
 		connection.transport.Close()
@@ -111,21 +111,26 @@ func (c connector) handleRequest(conn net.Conn) {
 	for {
 		var m Message
 		err := connection.decoder.Decode(&m)
+		//		logger.Infof("connector: handleRequest %s, decode, err is: %v, message is %#v", conn.LocalAddr().String(), err, m)
 		if err != nil {
 			if err != io.EOF {
-				fmt.Println("Error decoding: ", err.Error())
+				logger.Warnf("Error decoding: %s", err.Error())
 			}
+			//			logger.Warn("connector: handleRequest %s done, error is: %s", conn.LocalAddr().String(), err.Error())
 			return
 		}
 		if connection.to == "" && m.From() != "" {
 			connection.to = m.From()
+			//			logger.Infof("connector: put new connection %#v in pool first message is %s", conn, m)
 			c.pools.putBack(connection)
 		}
 		// forward the message
+		//		logger.Infof("connector about to forwarding message: %#v, addressable: %#v", m, c.addressable)
 		select {
 		case <-c.done:
 			return
 		case c.addressable.InboundChan() <- m:
+			//			logger.Infof("connector put inbound message: %#v, addressable: %#v", m, c.addressable)
 		}
 	}
 }

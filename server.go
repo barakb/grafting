@@ -20,7 +20,10 @@ const (
 )
 
 const RPC_TIMEOUT = 100 * time.Millisecond
-const ELECTION_TIMEOUT = 150
+const ELECTION_TIMEOUT = 150 * time.Millisecond
+
+//const RPC_TIMEOUT = 10 * time.Second
+//const ELECTION_TIMEOUT = 15 * time.Second
 
 var TIME_ZERO time.Time = time.Time{}
 
@@ -113,6 +116,7 @@ func (server *server) candidateLoop() {
 	electionTimeout := server.startNewElection()
 	timeoutTimer := time.After(electionTimeout)
 	for server.state == CANDIDATE {
+		logger.Debugf("-- server %s candidateLoop", server.id)
 		select {
 		case <-server.done:
 			return
@@ -128,15 +132,16 @@ func (server *server) candidateLoop() {
 }
 
 func (server *server) followerLoop() {
-	electionTimeout := time.After(nextElectionTimeoutDuration())
+	electionTimeout := time.After(server.nextElectionTimeoutDuration())
 	for server.state == FOLLOWER {
+		logger.Debugf("-- server %s followerLoop", server.id)
 		select {
 		case <-server.done:
 			return
 		case message := <-server.inboundChan:
 			resetTimeout := server.handleMessage(message)
 			if resetTimeout {
-				electionTimeout = time.After(nextElectionTimeoutDuration())
+				electionTimeout = time.After(server.nextElectionTimeoutDuration())
 			}
 		case <-electionTimeout:
 			server.setState(CANDIDATE)
@@ -180,7 +185,7 @@ func (server *server) leaderTimer() <-chan time.Time {
 
 func (server *server) startNewElection() time.Duration {
 	if server.state == FOLLOWER || server.state == CANDIDATE {
-		//		log.Infof("%s starting new election", server.id)
+		logger.Debugf("%s starting new election", server.id)
 		server.term += 1
 		server.votedFor = server.id
 		server.setState(CANDIDATE)
@@ -194,7 +199,7 @@ func (server *server) startNewElection() time.Duration {
 		server.heartbeatDue = make(map[string]time.Time, len(server.peers))
 		server.requestVote()
 	}
-	return nextElectionTimeoutDuration()
+	return server.nextElectionTimeoutDuration()
 }
 
 func (server *server) requestVote() {
@@ -213,7 +218,7 @@ func (server *server) becomeLeader() {
 		}
 		server.rpcDue = make(map[string]time.Time, len(server.peers))
 		server.heartbeatDue = make(map[string]time.Time, len(server.peers))
-		logger.Infof("%s is LEADER", server.id)
+		logger.Debugf("%s is LEADER", server.id)
 	}
 }
 
@@ -401,6 +406,21 @@ func (server *server) handleMessage(message Message) (restartElectionTimeout boo
 	case *StateMachineCommandRequest:
 		server.handleStateMachineCommand(m)
 		return false
+
+	case RequestVote:
+		return server.handleRequestVote(&m)
+	case RequestVoteResponse:
+		server.handleRequestVoteResponse(&m)
+		return false
+	case AppendEntries:
+		server.handleAppendEntries(&m)
+		return true
+	case AppendEntriesResponse:
+		server.handleAppendEntriesResponse(&m)
+		return false
+	case StateMachineCommandRequest:
+		server.handleStateMachineCommand(&m)
+		return false
 	default:
 		logger.Warnf("%s ignoring unexpected message from %s: %#v\n", server.id, message.From(), message)
 		return false
@@ -409,7 +429,7 @@ func (server *server) handleMessage(message Message) (restartElectionTimeout boo
 
 func (server *server) stepDown(term Term, message Message) {
 	if server.state != FOLLOWER {
-		logger.Infof("%s step down from %v -> %v at term %d, because of message %#v", server.id, server.state, FOLLOWER, server.term, message)
+		logger.Debugf("%s step down from %v -> %v at term %d, because of message %#v", server.id, server.state, FOLLOWER, server.term, message)
 	}
 	server.term = term
 	server.setState(FOLLOWER)
@@ -417,7 +437,6 @@ func (server *server) stepDown(term Term, message Message) {
 }
 
 func (server *server) sendMessage(message Message) {
-	logger.Debugf("%s -> %s: %#v", server.id, message.To(), message)
 	select {
 	case <-server.done:
 		return
@@ -455,6 +474,8 @@ func countVotes(m map[string]bool) (res int) {
  * Functions
  */
 
-func nextElectionTimeoutDuration() time.Duration {
-	return time.Duration(ELECTION_TIMEOUT+rand.Intn(int(ELECTION_TIMEOUT)/2)) * time.Millisecond
+func (server *server) nextElectionTimeoutDuration() time.Duration {
+	res := time.Duration(int(ELECTION_TIMEOUT) + rand.Intn(int(ELECTION_TIMEOUT)/2))
+	logger.Debugf("%s nextElectionTimeoutDuration:%v", server.id, res)
+	return res
 }

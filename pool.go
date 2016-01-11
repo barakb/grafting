@@ -2,6 +2,7 @@ package grafting
 
 import (
 	"fmt"
+	logger "github.com/Sirupsen/logrus"
 	"sync"
 	"time"
 )
@@ -21,8 +22,10 @@ func (p Pool) get() (Conn, error) {
 	case <-p.done:
 		return nil, fmt.Errorf("pool %s is closed", p.remoteAddress)
 	case res := <-p.connections:
+		//		logger.Infof("pool to %s return existing connection: %v", p.remoteAddress, res)
 		return res, nil
 	case <-time.After(20 * time.Millisecond):
+		//	    logger.Infof("pool to %s open new connection", p.remoteAddress)
 		return p.openNewConnection()
 	}
 }
@@ -32,7 +35,9 @@ func (p Pool) putBack(connection Conn) {
 	case <-p.done:
 		connection.Close()
 	case p.connections <- connection:
+		//		logger.Infof("pool to %s (putBack) connection: %v", p.remoteAddress, connection)
 	case <-time.After(20 * time.Millisecond):
+		//		logger.Infof("pool to %s (putBack) closing connection: %v", p.remoteAddress, connection)
 		connection.Close()
 	}
 }
@@ -57,7 +62,7 @@ func (p Pool) openNewConnection() (Conn, error) {
 		if err != nil {
 			return nil, err
 		}
-		return newConnection(c, p.encoderDecoderBuilder, false, p.writeTimeout), nil
+		return newConnection(c, p.remoteAddress, p.encoderDecoderBuilder, false, p.writeTimeout), nil
 	}
 	return nil, fmt.Errorf("pool %s can not create new connections", p.remoteAddress)
 }
@@ -109,10 +114,14 @@ func (p *Pools) Close() error {
 }
 
 func (p *Pools) putBack(connection Conn) {
+	if connection.To() == "" {
+		panic(fmt.Sprintf("failed to put in pool connection to empty target %#v", connection.To()))
+	}
 	p.RLock()
 	pool, ok := p.pools[connection.To()]
 	p.RUnlock()
 	if !ok {
+		logger.Debugf("pools: creating pool [%s] for connection %#v", connection.To(), connection)
 		pool = p.getOrCreatePool(connection.To())
 	}
 	pool.putBack(connection)

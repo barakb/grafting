@@ -3,12 +3,17 @@ package grafting
 import (
 	"errors"
 	"fmt"
-	//	logger "github.com/Sirupsen/logrus"
+	logger "github.com/Sirupsen/logrus"
+	"net"
 	"testing"
 	"time"
 )
 
-func Test3ServerReplicateData(t *testing.T) {
+func init() {
+	logger.SetLevel(logger.InfoLevel)
+}
+
+func Test3ServersReplicateData(t *testing.T) {
 	server1 := NewServer("server1", []string{"server2", "server3"}, NewMemoryLog())
 	server2 := NewServer("server2", []string{"server1", "server3"}, NewMemoryLog())
 	server3 := NewServer("server3", []string{"server2", "server1"}, NewMemoryLog())
@@ -54,7 +59,7 @@ func Test3ServerReplicateData(t *testing.T) {
 }
 
 func leader(s1 *server, s2 *server, s3 *server) (*server, error) {
-	timeOut := time.After(10 * time.Second)
+	timeOut := time.After(30 * time.Second)
 	for {
 		select {
 		case e := <-s1.eventsChan:
@@ -90,4 +95,54 @@ func waitFor(pred predicate, millis int, msg string, t *testing.T) {
 		return
 	}
 	t.Error(msg)
+}
+
+func Test3TCPServersReplicateData(t *testing.T) {
+	listeners := make([]net.Listener, 3, 3)
+	var err error
+	for i := range listeners {
+		listeners[i], err = net.Listen("tcp", "localhost:0")
+		if err != nil {
+			t.Errorf("failed to create a listener %v", err)
+		}
+	}
+	others := make([][]string, 3, 3)
+	for i := range listeners {
+		others[i] = without(i, listeners)
+	}
+
+	server1 := NewServer(listeners[0].Addr().String()+":server0", others[0], NewMemoryLog())
+	server2 := NewServer(listeners[1].Addr().String()+":server1", others[1], NewMemoryLog())
+	server3 := NewServer(listeners[2].Addr().String()+":server2", others[2], NewMemoryLog())
+	servers := []*server{server1, server2, server3}
+	tcpConnector1 := NewTCPConnector(server1, others[0], listeners[0], 2, time.Millisecond*500)
+	tcpConnector2 := NewTCPConnector(server2, others[1], listeners[1], 2, time.Millisecond*500)
+	tcpConnector3 := NewTCPConnector(server3, others[2], listeners[2], 2, time.Millisecond*500)
+	defer tcpConnector1.Close()
+	defer tcpConnector2.Close()
+	defer tcpConnector3.Close()
+	for _, server := range servers {
+		server.eventsChan = make(chan StateChangeEvent, 100)
+		go server.Run()
+		defer server.Close()
+	}
+	leader, err := leader(server1, server2, server3)
+	if err != nil {
+		t.Error(err.Error())
+	}
+	fmt.Printf("leader is %s\n", leader.id)
+
+	//	t.Errorf("others are %#v", others)
+}
+
+func without(index int, listeners []net.Listener) []string {
+	res := make([]string, len(listeners)-1, len(listeners)-1)
+	writePos := 0
+	for readPos, listener := range listeners {
+		if index != readPos {
+			res[writePos] = fmt.Sprintf("%s:server%d", listener.Addr().String(), readPos)
+			writePos++
+		}
+	}
+	return res
 }

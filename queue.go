@@ -9,7 +9,7 @@ import (
 var QueueClosedError = errors.New("Queue: the queue is closed")
 
 // BlockingQueue as in java BlockingQueue.
-// Reader will be block when there are not elements in the queue.
+// Reader will be block when there are no elements in the queue.
 // This can be used instead of channel when there is an enqueue logic that depends on the already enqueued elements.
 // For example queue of messages that waiting to be send and an enqueue message can be replaced with an already in queue
 // equivalent but older message to prevent queue overflow.
@@ -59,12 +59,13 @@ func (q blockingQueue) Enqueue(value interface{}) error {
 // returns QueueClosedError if queue is closed.
 func (q blockingQueue) Dequeue() (interface{}, error) {
 	var respChan chan interface{}
+	q.mutex.Lock()
 	select {
 	case <-q.done:
+		q.mutex.Unlock()
 		return nil, QueueClosedError
 	default:
 		respChan = make(chan interface{}, 1)
-		q.mutex.Lock()
 		if 0 < q.items.Len() {
 			respChan <- q.items.Remove(q.items.Front())
 			close(respChan)

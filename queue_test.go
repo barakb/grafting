@@ -20,7 +20,7 @@ func TestCloseEmptyQueue(t *testing.T) {
 	if e != QueueClosedError {
 		t.Errorf("Expected QueueClosedError instead %#v", e)
 	}
-	val, e := q.Dequeue()
+	val, e := q.Dequeue(nil)
 	if e != QueueClosedError {
 		t.Errorf("Expected QueueClosedError instead %#v", e)
 	}
@@ -32,7 +32,7 @@ func TestCloseEmptyQueue(t *testing.T) {
 func TestCloseQueueWithListener(t *testing.T) {
 	q := NewBlockingQueue()
 	go func() {
-		_, e := q.Dequeue()
+		_, e := q.Dequeue(nil)
 		if e != QueueClosedError {
 			t.Errorf("Expected QueueClosedError instead %#v", e)
 		}
@@ -43,6 +43,20 @@ func TestCloseQueueWithListener(t *testing.T) {
 		t.Errorf("Expected nil instead %#v", err)
 	}
 }
+func TestDequeueDone(t *testing.T) {
+	q := NewBlockingQueue()
+	dequeueDone := make(chan interface{})
+	go func() {
+		_, e := q.Dequeue(dequeueDone)
+		if e != DequeueDoneError {
+			t.Errorf("Expected DequeueDoneError instead %#v", e)
+		}
+	}()
+	time.Sleep(50 * time.Millisecond)
+	close(dequeueDone)
+	time.Sleep(50 * time.Millisecond)
+	q.Close()
+}
 
 func TestEnqueueDequeue(t *testing.T) {
 	q := NewBlockingQueue()
@@ -52,7 +66,7 @@ func TestEnqueueDequeue(t *testing.T) {
 		t.Errorf("Expected nil instead %#v", err)
 	}
 
-	val, err := q.Dequeue()
+	val, err := q.Dequeue(nil)
 	if err != nil {
 		t.Errorf("Expected nil instead %#v", err)
 	}
@@ -69,7 +83,7 @@ func TestEnqueueDequeue(t *testing.T) {
 func TestDequeueEnqueue(t *testing.T) {
 	q := NewBlockingQueue()
 	go func() {
-		v, e := q.Dequeue()
+		v, e := q.Dequeue(nil)
 		if e != nil {
 			t.Errorf("Expected nil instead %#v", e)
 		}

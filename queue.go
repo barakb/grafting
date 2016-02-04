@@ -7,6 +7,7 @@ import (
 )
 
 var QueueClosedError = errors.New("Queue: the queue is closed")
+var DequeueDoneError = errors.New("Dequeue: done")
 
 // BlockingQueue as in java BlockingQueue.
 // Reader will be block when there are no elements in the queue.
@@ -15,7 +16,7 @@ var QueueClosedError = errors.New("Queue: the queue is closed")
 // equivalent but older message to prevent queue overflow.
 type BlockingQueue interface {
 	Enqueue(value interface{}) error
-	Dequeue() (interface{}, error)
+	Dequeue(dequeueDone chan interface{}) (interface{}, error)
 	Close() error
 }
 
@@ -57,7 +58,7 @@ func (q blockingQueue) Enqueue(value interface{}) error {
 
 // Dequeue a value, will block until there is a value.
 // returns QueueClosedError if queue is closed.
-func (q blockingQueue) Dequeue() (interface{}, error) {
+func (q blockingQueue) Dequeue(dequeueDone chan interface{}) (interface{}, error) {
 	var respChan chan interface{}
 	q.mutex.Lock()
 	select {
@@ -78,6 +79,8 @@ func (q blockingQueue) Dequeue() (interface{}, error) {
 	select {
 	case <-q.done:
 		return nil, QueueClosedError
+	case <-dequeueDone:
+		return nil, DequeueDoneError
 	case resp := <-respChan:
 		if resp == nil {
 			return nil, QueueClosedError

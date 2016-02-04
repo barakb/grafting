@@ -93,10 +93,10 @@ func (p *Pools) get(to string) (Conn, error) {
 }
 
 func (p *Pools) getOrCreatePool(to string) *Pool {
-	created := createPoolFor(to, p.maxSize, p.encoderDecoderBuilder, nil, false, p.writeTimeout)
 	p.Lock()
 	pool, ok := p.pools[to]
 	if !ok {
+		created := createPoolFor(to, p.maxSize, p.encoderDecoderBuilder, nil, false, p.writeTimeout)
 		pool, p.pools[to] = created, created
 	}
 	p.Unlock()

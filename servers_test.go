@@ -146,3 +146,7 @@ func without(index int, listeners []net.Listener) []string {
 	}
 	return res
 }
+
+func ExampleNewServer() {
+	fmt.Println("foo")
+}

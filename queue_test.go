@@ -45,7 +45,7 @@ func TestCloseQueueWithListener(t *testing.T) {
 }
 func TestDequeueDone(t *testing.T) {
 	q := NewBlockingQueue()
-	dequeueDone := make(chan interface{})
+	dequeueDone := make(chan struct{})
 	go func() {
 		_, e := q.Dequeue(dequeueDone)
 		if e != DequeueDoneError {

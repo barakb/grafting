@@ -16,7 +16,7 @@ var DequeueDoneError = errors.New("Dequeue: done")
 // equivalent but older message to prevent queue overflow.
 type BlockingQueue interface {
 	Enqueue(value interface{}) error
-	Dequeue(dequeueDone chan interface{}) (interface{}, error)
+	Dequeue(dequeueDone chan struct{}) (interface{}, error)
 	Close() error
 }
 
@@ -58,7 +58,7 @@ func (q blockingQueue) Enqueue(value interface{}) error {
 
 // Dequeue a value, will block until there is a value.
 // returns QueueClosedError if queue is closed.
-func (q blockingQueue) Dequeue(dequeueDone chan interface{}) (interface{}, error) {
+func (q blockingQueue) Dequeue(dequeueDone chan struct{}) (interface{}, error) {
 	var respChan chan interface{}
 	q.mutex.Lock()
 	select {

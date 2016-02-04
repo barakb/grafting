@@ -2,6 +2,7 @@ package grafting
 
 import (
 	"container/list"
+	"fmt"
 	"sync"
 )
 
@@ -11,7 +12,7 @@ type Endpoint struct {
 	isStreamOwner       bool
 	messageReaderWriter MessageReaderWriterCloser
 	sentQueue           BlockingQueue
-	incoming            chan <- Message
+	incoming            chan<- Message
 	done                chan struct{}
 	container           *Endpoints
 }
@@ -54,12 +55,16 @@ func NewEndpoint(isStreamOwner bool, messageReaderWriter MessageReaderWriterClos
 			msg, err := sentQueue.Dequeue(res.done)
 			if err != nil {
 				res.onError(err)
-				return;
+				return
 			}
-			res.messageReaderWriter.Write(msg)
-			if err != nil {
-				res.onError(err)
-				return;
+			if msg, ok := msg.(Message); ok {
+				err = res.messageReaderWriter.Write(msg)
+				if err != nil {
+					res.onError(err)
+					return
+				}
+			} else {
+				res.onError(fmt.Errorf("wrong messageType %#v", msg))
 			}
 		}
 	}()
@@ -70,13 +75,13 @@ func NewEndpoint(isStreamOwner bool, messageReaderWriter MessageReaderWriterClos
 type Endpoints struct {
 	sync.RWMutex
 	target    string
-	incoming  chan <- Message
+	incoming  chan<- Message
 	done      chan struct{}
 	endpoints *list.List
 	sentQueue BlockingQueue
 }
 
-func NewEndPoints(target string, incoming chan <- Message) *Endpoints {
+func NewEndPoints(target string, incoming chan<- Message) *Endpoints {
 	res := &Endpoints{sync.RWMutex{}, target, incoming, make(chan struct{}), list.New(), NewBlockingQueue()}
 	return res
 }
@@ -110,4 +115,3 @@ func (eps *Endpoints) remove(ep *Endpoint) {
 func (eps *Endpoints) Write(m Message) {
 	eps.sentQueue.Enqueue(m)
 }
-
